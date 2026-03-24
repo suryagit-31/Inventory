@@ -205,7 +205,7 @@ const SampleReturnPage: React.FC = () => {
     };
 
     loadIssueForReturn();
-  }, [issueDocNumber, currentView, navigate]);
+  }, [issueDocNumber, currentView, navigate, toast]);
 
   const handleInputChange = (field: keyof SampleReturnForm, value: any) => {
     setFormData({
