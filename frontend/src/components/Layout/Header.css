@@ -1,0 +1,15 @@
+.header {
+  background-color: var(--primary-blue);
+  border-bottom: 2px solid var(--primary-orange);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding: 16px 24px;
+}
+
+.header-title {
+  font-size: 24px;
+  color: var(--white);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}

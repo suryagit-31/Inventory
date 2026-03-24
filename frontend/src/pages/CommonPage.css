@@ -1,0 +1,33 @@
+.common-page {
+  padding: 20px;
+}
+
+.coming-soon {
+  text-align: center;
+  padding: 60px 40px;
+  color: var(--text-dark);
+}
+
+.coming-soon h2 {
+  font-size: 32px;
+  color: var(--primary-blue);
+  margin-bottom: 16px;
+}
+
+.coming-soon p {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 24px;
+}
+
+.coming-soon ul {
+  list-style: none;
+  padding: 0;
+  margin-top: 20px;
+}
+
+.coming-soon ul li {
+  padding: 8px 0;
+  color: var(--primary-orange);
+  font-weight: 600;
+}
