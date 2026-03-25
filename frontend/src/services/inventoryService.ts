@@ -28,6 +28,18 @@ export type InventoryAddOnResponse = {
   }>;
 };
 
+export type InventoryAddOnLineListItem = {
+  header_id: string;
+  line_id: string;
+  doc_number: string;
+  date: string;
+  location_store: string;
+  item_name: string;
+  description?: string | null;
+  quantity: number;
+  created_at: string;
+};
+
 export async function createInventoryAddOn(
   payload: InventoryAddOnCreatePayload
 ): Promise<InventoryAddOnResponse> {
@@ -51,3 +63,40 @@ export async function createInventoryAddOn(
   return await response.json();
 }
 
+export async function listRecentInventoryAddOnLines(params?: {
+  skip?: number;
+  limit?: number;
+}): Promise<InventoryAddOnLineListItem[]> {
+  const search = new URLSearchParams();
+  search.set('skip', String(params?.skip ?? 0));
+  search.set('limit', String(params?.limit ?? 100));
+
+  const response = await fetch(`${API_BASE_URL}/api/inventory/lines?${search.toString()}`);
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const json = await response.json();
+      detail = json?.detail || JSON.stringify(json);
+    } catch {
+      // ignore
+    }
+    throw new Error(`Failed to load recent inventory add-ons: ${detail}`);
+  }
+
+  return await response.json();
+}
+
+export async function getInventoryAddOn(addonId: string): Promise<InventoryAddOnResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/inventory/${encodeURIComponent(addonId)}`);
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const json = await response.json();
+      detail = json?.detail || JSON.stringify(json);
+    } catch {
+      // ignore
+    }
+    throw new Error(`Failed to load inventory add-on: ${detail}`);
+  }
+  return await response.json();
+}

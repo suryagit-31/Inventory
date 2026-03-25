@@ -2,10 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import text
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.database import init_db
+from app.database import init_db, app_engine, erp_engine
 from app.routers import (
     projects,
     items,
@@ -108,10 +109,29 @@ def root():
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "database": "connected",
+    def _ping(engine):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return {"status": "connected"}
+        except Exception as exc:
+            return {"status": "error", "error": str(exc) if settings.DEBUG else "unavailable"}
+
+    app_db = _ping(app_engine)
+    erp_db = _ping(erp_engine)
+
+    ok = app_db["status"] == "connected" and erp_db["status"] == "connected"
+    payload = {
+        "status": "healthy" if ok else "degraded",
+        # Backward-compatible fields
+        "database": "connected" if ok else "error",
+        # Detailed fields
+        "databases": {
+            "app": app_db,
+            "erp": erp_db,
+        },
     }
+    return JSONResponse(status_code=200 if ok else 503, content=payload)
 
 
 if __name__ == "__main__":

@@ -5,10 +5,32 @@ from uuid import uuid4
 
 from app.database import get_db
 from app.models.inventory import InventoryAddOn, InventoryAddOnLine, Item
-from app.schemas.inventory import InventoryAddOnCreate, InventoryAddOnResponse
+from app.models.item_stock import ItemStock
+from app.schemas.inventory import InventoryAddOnCreate, InventoryAddOnResponse, InventoryAddOnLineListItem
 from app.utils.doc_number import generate_doc_number
+from app.utils.normalize import normalize_item_name
 
 router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
+
+def _get_item_for_update(db: Session, item_name_key: str) -> Item | None:
+    return (
+        db.query(Item)
+        .with_hint(Item, "WITH (UPDLOCK, ROWLOCK)", "mssql")
+        .filter(Item.item_name_key == item_name_key)
+        .first()
+    )
+
+def _get_stock_for_update(db: Session, item_id: str, location: str) -> ItemStock | None:
+    return (
+        db.query(ItemStock)
+        .with_hint(ItemStock, "WITH (UPDLOCK, ROWLOCK)", "mssql")
+        .filter(ItemStock.item_id == item_id)
+        .filter(ItemStock.location == location)
+        .first()
+    )
+
+def _available(qty_on_hand: float | None, qty_issued: float | None) -> float:
+    return max(float(qty_on_hand or 0.0) - float(qty_issued or 0.0), 0.0)
 
 
 @router.get("/", response_model=List[InventoryAddOnResponse])
@@ -26,6 +48,46 @@ def get_all_inventory_addons(
     return addons
 
 
+@router.get("/lines", response_model=List[InventoryAddOnLineListItem])
+def get_recent_inventory_addon_lines(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """
+    List recent inventory add-on line items (flattened).
+    Ordered newest-first by header created_at.
+    """
+    # MSSQL requires ORDER BY when using OFFSET/FETCH. Avoid OFFSET when skip=0.
+    query = (
+        db.query(InventoryAddOnLine, InventoryAddOn)
+        .join(InventoryAddOn, InventoryAddOn.id == InventoryAddOnLine.header_id)
+        .order_by(
+            InventoryAddOn.created_at.desc(),
+            InventoryAddOnLine.created_at.desc(),
+            InventoryAddOnLine.id.desc(),
+        )
+    )
+    if skip:
+        query = query.offset(skip)
+    rows = query.limit(limit).all()
+
+    return [
+        InventoryAddOnLineListItem(
+            header_id=line.header_id,
+            line_id=line.id,
+            doc_number=header.doc_number,
+            date=header.date,
+            location_store=header.location_store,
+            item_name=line.item_name,
+            description=line.description,
+            quantity=int(line.quantity),
+            created_at=line.created_at,
+        )
+        for (line, header) in rows
+    ]
+
+
 @router.get("/{addon_id}", response_model=InventoryAddOnResponse)
 def get_inventory_addon(addon_id: str, db: Session = Depends(get_db)):
     """Get a specific inventory add-on by ID"""
@@ -41,72 +103,128 @@ def get_inventory_addon(addon_id: str, db: Session = Depends(get_db)):
 @router.post("/", response_model=InventoryAddOnResponse, status_code=status.HTTP_201_CREATED)
 def create_inventory_addon(addon: InventoryAddOnCreate, db: Session = Depends(get_db)):
     """Create a new inventory add-on"""
-    # Generate document number
-    doc_number = generate_doc_number(db, InventoryAddOn, "IA")
+    try:
+        doc_number = generate_doc_number(db, InventoryAddOn, "IA")
 
-    # Create header
-    addon_id = str(uuid4())
-    db_addon = InventoryAddOn(
-        id=addon_id,
-        doc_number=doc_number,
-        **addon.model_dump(exclude={'line_items'})
-    )
-    db.add(db_addon)
-
-    # Create line items and update inventory
-    for line_item in addon.line_items:
-        # Create line item
-        db_line = InventoryAddOnLine(
-            id=str(uuid4()),
-            header_id=addon_id,
-            **line_item.model_dump()
+        addon_id = str(uuid4())
+        db_addon = InventoryAddOn(
+            id=addon_id,
+            doc_number=doc_number,
+            **addon.model_dump(exclude={'line_items'})
         )
-        db.add(db_line)
+        db.add(db_addon)
 
-        # Check if item exists, if not create it
-        item = db.query(Item).filter(Item.item_name == line_item.item_name).first()
-        if item:
-            # Update existing item
-            item.qty_on_hand += line_item.quantity
-            item.qty_available = item.qty_on_hand - item.qty_issued
-            if line_item.description:
-                item.description = line_item.description
-            item.location = addon.location_store
-        else:
-            # Create new item
-            new_item = Item(
+        # Merge duplicate item lines by normalized key (case+space fold).
+        merged: dict[str, dict] = {}
+        for line_item in addon.line_items:
+            display = (line_item.item_name or "").strip()
+            key = normalize_item_name(display)
+            if not key:
+                raise HTTPException(status_code=400, detail="Item name cannot be empty")
+
+            entry = merged.get(key)
+            if entry is None:
+                merged[key] = {
+                    "item_name_key": key,
+                    "display_name": display,
+                    "description": (line_item.description or "").strip() or None,
+                    "quantity": int(line_item.quantity),
+                }
+            else:
+                entry["quantity"] += int(line_item.quantity)
+                if not entry["description"] and (line_item.description or "").strip():
+                    entry["description"] = (line_item.description or "").strip()
+
+        location = (addon.location_store or "").strip()
+        if not location:
+            raise HTTPException(status_code=400, detail="location_store is required")
+
+        for entry in merged.values():
+            item = _get_item_for_update(db, entry["item_name_key"])
+            if item:
+                # Keep item master description stable; store-specific description is on ItemStock.
+                # If the master has no description yet, accept the first provided one as default.
+                if entry["description"] and not (item.description or "").strip():
+                    item.description = entry["description"]
+                line_item_name = item.item_name
+                line_item_desc = entry["description"] if entry["description"] is not None else (item.description or None)
+            else:
+                new_item = Item(
+                    id=str(uuid4()),
+                    item_name=entry["display_name"],
+                    item_name_key=entry["item_name_key"],
+                    description=entry["description"],
+                    location=location,
+                    qty_on_hand=0.0,
+                    qty_issued=0.0,
+                    qty_available=0.0,
+                )
+                db.add(new_item)
+                db.flush()
+                item = new_item
+                line_item_name = entry["display_name"]
+                line_item_desc = entry["description"]
+
+            stock = _get_stock_for_update(db, item.id, location)
+            if stock:
+                stock.qty_on_hand = float(stock.qty_on_hand or 0.0) + float(entry["quantity"])
+                stock.qty_issued = float(stock.qty_issued or 0.0)
+                if entry["description"]:
+                    stock.description = entry["description"]
+            else:
+                stock = ItemStock(
+                    id=str(uuid4()),
+                    item_id=item.id,
+                    location=location,
+                    description=entry["description"],
+                    qty_on_hand=float(entry["quantity"]),
+                    qty_issued=0.0,
+                )
+                db.add(stock)
+
+            db_line = InventoryAddOnLine(
                 id=str(uuid4()),
-                item_name=line_item.item_name,
-                description=line_item.description,
-                location=addon.location_store,
-                qty_on_hand=line_item.quantity,
-                qty_issued=0.0,
-                qty_available=line_item.quantity
+                header_id=addon_id,
+                item_name=line_item_name,
+                description=line_item_desc,
+                quantity=int(entry["quantity"]),
             )
-            db.add(new_item)
+            db.add(db_line)
 
-    db.commit()
-    db.refresh(db_addon)
-    return db_addon
+        db.commit()
+        db.refresh(db_addon)
+        return db_addon
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.delete("/{addon_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_inventory_addon(addon_id: str, db: Session = Depends(get_db)):
     """Delete an inventory add-on"""
-    db_addon = db.query(InventoryAddOn).filter(InventoryAddOn.id == addon_id).first()
-    if not db_addon:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Inventory add-on with id {addon_id} not found"
-        )
+    try:
+        db_addon = db.query(InventoryAddOn).filter(InventoryAddOn.id == addon_id).first()
+        if not db_addon:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Inventory add-on with id {addon_id} not found"
+            )
 
-    # Reverse inventory changes
-    for line_item in db_addon.line_items:
-        item = db.query(Item).filter(Item.item_name == line_item.item_name).first()
-        if item:
-            item.qty_on_hand -= line_item.quantity
-            item.qty_available = item.qty_on_hand - item.qty_issued
+        location = (db_addon.location_store or "").strip()
+        for line_item in db_addon.line_items:
+            item_key = normalize_item_name(line_item.item_name or "")
+            item = _get_item_for_update(db, item_key) if item_key else None
+            if not item:
+                continue
 
-    db.delete(db_addon)
-    db.commit()
-    return None
+            stock = _get_stock_for_update(db, item.id, location) if location else None
+            if stock:
+                stock.qty_on_hand = float(stock.qty_on_hand or 0.0) - float(line_item.quantity)
+                stock.qty_issued = float(stock.qty_issued or 0.0)
+
+        db.delete(db_addon)
+        db.commit()
+        return None
+    except Exception:
+        db.rollback()
+        raise

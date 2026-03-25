@@ -75,6 +75,10 @@ inventory/
 │   ├── run.py                       (Quick start script)
 │   ├── seed_data.py                 (Initial data)
 │   ├── database_setup.sql           (Manual SQL script)
+│   ├── doc_number_sequence_setup.sql (One-time SQL for existing DBs)
+│   ├── item_name_key_upgrade.sql     (One-time SQL for item de-dup key)
+│   ├── item_stock_upgrade.sql        (One-time SQL for per-store stock)
+│   ├── item_stock_description_upgrade.sql (One-time SQL for store-specific descriptions)
 │   └── README.md
 │
 ├── README.md                         (Project overview)
@@ -144,6 +148,18 @@ SQLAlchemy will create all tables automatically when you first run the backend.
 ```bash
 # Connect to SQL Server and run:
 backend/database_setup.sql
+```
+
+If upgrading an existing DB that already has the Sample Tracker tables, also run:
+
+```bash
+backend/doc_number_sequence_setup.sql
+```
+
+To enable case/space-insensitive item identity (Samsung s24 == samsung S24), run:
+
+```bash
+backend/item_name_key_upgrade.sql
 ```
 
 ### Tables Created (8 total):

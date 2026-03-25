@@ -16,3 +16,24 @@
   overflow-y: auto;
   height: calc(100vh - 60px);
 }
+
+@media print {
+  .header,
+  .sidebar {
+    display: none !important;
+  }
+
+  .layout {
+    background: #fff !important;
+  }
+
+  .layout-body {
+    display: block;
+  }
+
+  .main-content {
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+}

@@ -9,6 +9,7 @@ class Item(AppBase):
 
     id = Column(String(50), primary_key=True, index=True)
     item_name = Column(String(100), unique=True, nullable=False, index=True)
+    item_name_key = Column(String(100), unique=True, nullable=False, index=True)
     description = Column(String(500))
     location = Column(String(100))
     qty_on_hand = Column(Float, default=0.0)

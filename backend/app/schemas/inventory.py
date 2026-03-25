@@ -21,11 +21,25 @@ class ItemUpdate(BaseModel):
 
 class ItemResponse(ItemBase):
     id: str
+    item_name_key: str | None = None
     qty_on_hand: float
     qty_issued: float
     qty_available: float
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ItemSearchResult(BaseModel):
+    id: str
+    item_name: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+    qty_on_hand: float
+    qty_issued: float
+    qty_available: float
 
     class Config:
         from_attributes = True
@@ -71,3 +85,16 @@ class InventoryAddOnResponse(InventoryAddOnBase):
 
     class Config:
         from_attributes = True
+
+
+class InventoryAddOnLineListItem(BaseModel):
+    """Flattened view for listing recent add-on lines (newest first)."""
+    header_id: str
+    line_id: str
+    doc_number: str
+    date: datetime
+    location_store: str
+    item_name: str
+    description: Optional[str] = None
+    quantity: int
+    created_at: datetime

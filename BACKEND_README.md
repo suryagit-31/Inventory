@@ -22,6 +22,10 @@ backend/
 ├── seed_data.py            # Initial data script
 ├── run.py                  # Quick start script
 ├── database_setup.sql      # Manual SQL setup
+├── doc_number_sequence_setup.sql # Add-on SQL for doc number sequences
+├── item_name_key_upgrade.sql # Add-on SQL for item de-dup key
+├── item_stock_upgrade.sql     # Add-on SQL for per-store stock
+├── item_stock_description_upgrade.sql # Add-on SQL for store-specific descriptions
 └── README.md               # Full documentation
 ```
 
@@ -71,6 +75,19 @@ pip install -r requirements.txt
 ```bash
 # Connect to SQL Server and run:
 database_setup.sql
+```
+
+If you already created the tables before March 2026 (or you’re upgrading an existing DB),
+also run:
+
+```bash
+doc_number_sequence_setup.sql
+```
+
+And to enable case/space-insensitive item identity (Samsung s24 == samsung S24), run:
+
+```bash
+item_name_key_upgrade.sql
 ```
 
 ### 3. Configure Environment

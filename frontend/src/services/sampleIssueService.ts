@@ -96,6 +96,21 @@ export async function listSampleIssues(params?: {
   return await response.json();
 }
 
+export async function getSampleIssueByDocNumber(docNumber: string): Promise<SampleIssueResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/sample-issues/doc/${encodeURIComponent(docNumber)}`);
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const json = await response.json();
+      detail = json?.detail || JSON.stringify(json);
+    } catch {
+      // ignore
+    }
+    throw new Error(`Failed to load sample issue: ${detail}`);
+  }
+  return await response.json();
+}
+
 export type ReturnableLine = {
   item_name: string;
   description?: string | null;

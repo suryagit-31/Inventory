@@ -37,6 +37,7 @@ backend/
 │   │   ├── inventory.py
 │   │   ├── sample_issue.py
 │   │   └── sample_return.py
+│   │   └── doc_sequence.py      # Doc-number sequences (SI/IA/SR)
 │   ├── schemas/             # Pydantic schemas
 │   │   ├── project.py
 │   │   ├── inventory.py
@@ -53,6 +54,10 @@ backend/
 │       └── doc_number.py    # Document number generation
 ├── requirements.txt
 ├── .env.example
+├── doc_number_sequence_setup.sql # One-time SQL for existing DBs
+├── item_name_key_upgrade.sql      # One-time SQL: item de-dup key
+├── item_stock_upgrade.sql         # One-time SQL: per-store stock
+├── item_stock_description_upgrade.sql # One-time SQL: store-specific descriptions
 └── README.md
 ```
 
@@ -118,10 +123,24 @@ CORS_ORIGINS=http://localhost:3000
 
 ### 5. Initialize Database
 
-The application will automatically create tables on startup. Alternatively, run:
+The application will automatically create tables on startup (requires DB permissions to create tables). Alternatively, run:
 
 ```bash
 python -c "from app.database import init_db; init_db()"
+```
+
+If you are upgrading an existing database that already has Sample Tracker tables, run:
+
+```sql
+-- in your target DB (SampleTrackerDB or ERP-Live)
+backend/doc_number_sequence_setup.sql
+```
+
+To enable case/space-insensitive item identity (Samsung s24 == samsung S24), run:
+
+```sql
+-- in your target DB (SampleTrackerDB or ERP-Live)
+backend/item_name_key_upgrade.sql
 ```
 
 ### 6. Run the Application

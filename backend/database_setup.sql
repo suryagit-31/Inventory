@@ -44,6 +44,7 @@ BEGIN
     CREATE TABLE dbo.ErpSampleTrackerItems (
         id NVARCHAR(50) PRIMARY KEY,
         item_name NVARCHAR(100) UNIQUE NOT NULL,
+        item_name_key NVARCHAR(100) UNIQUE NOT NULL,
         description NVARCHAR(500),
         location NVARCHAR(100),
         qty_on_hand FLOAT DEFAULT 0.0,
@@ -53,7 +54,52 @@ BEGIN
         updated_at DATETIME DEFAULT GETDATE()
     );
     CREATE INDEX idx_ErpSampleTrackerItems_item_name ON dbo.ErpSampleTrackerItems(item_name);
+    CREATE INDEX idx_ErpSampleTrackerItems_item_name_key ON dbo.ErpSampleTrackerItems(item_name_key);
     PRINT 'Table ErpSampleTrackerItems created successfully.';
+END
+GO
+
+-- =============================================
+-- Table: ErpSampleTrackerItemStocks (per-location stock)
+-- =============================================
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ErpSampleTrackerItemStocks')
+BEGIN
+    CREATE TABLE dbo.ErpSampleTrackerItemStocks (
+        id NVARCHAR(50) PRIMARY KEY,
+        item_id NVARCHAR(50) NOT NULL,
+        location NVARCHAR(100) NOT NULL,
+        description NVARCHAR(500),
+        qty_on_hand FLOAT DEFAULT 0.0,
+        qty_issued FLOAT DEFAULT 0.0,
+        created_at DATETIME DEFAULT GETDATE(),
+        updated_at DATETIME DEFAULT GETDATE(),
+        CONSTRAINT fk_ErpSampleTrackerItemStocks_item_id FOREIGN KEY (item_id)
+            REFERENCES dbo.ErpSampleTrackerItems(id) ON DELETE CASCADE,
+        CONSTRAINT uq_ErpSampleTrackerItemStocks_item_location UNIQUE (item_id, location)
+    );
+    CREATE INDEX idx_ErpSampleTrackerItemStocks_item_id ON dbo.ErpSampleTrackerItemStocks(item_id);
+    CREATE INDEX idx_ErpSampleTrackerItemStocks_location ON dbo.ErpSampleTrackerItemStocks(location);
+    PRINT 'Table ErpSampleTrackerItemStocks created successfully.';
+END
+GO
+
+-- =============================================
+-- Table: ErpSampleTrackerDocNumberSequences
+-- =============================================
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ErpSampleTrackerDocNumberSequences')
+BEGIN
+    CREATE TABLE dbo.ErpSampleTrackerDocNumberSequences (
+        id NVARCHAR(50) PRIMARY KEY,
+        prefix NVARCHAR(10) NOT NULL,
+        year_month NVARCHAR(6) NOT NULL, -- YYYYMM
+        next_value INT NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT GETDATE(),
+        updated_at DATETIME DEFAULT GETDATE(),
+        CONSTRAINT uq_ErpSampleTrackerDocNumberSequences_prefix_year_month UNIQUE (prefix, year_month)
+    );
+    CREATE INDEX idx_ErpSampleTrackerDocNumberSequences_prefix_year_month
+        ON dbo.ErpSampleTrackerDocNumberSequences(prefix, year_month);
+    PRINT 'Table ErpSampleTrackerDocNumberSequences created successfully.';
 END
 GO
 

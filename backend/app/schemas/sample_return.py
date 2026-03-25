@@ -64,3 +64,16 @@ class SampleReturnResponse(SampleReturnBase):
 
     class Config:
         from_attributes = True
+
+
+class SampleReturnSummary(BaseModel):
+    id: str
+    doc_number: str
+    original_issue_id: str
+    original_issue_doc_number: str
+    store_location: Optional[str] = None
+    date_of_return: datetime
+    status: str
+    return_scope: str  # Draft | Partial | Full
+    line_count: int
+    total_qty_return: float

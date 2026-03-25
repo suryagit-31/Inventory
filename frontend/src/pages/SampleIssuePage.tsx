@@ -4,10 +4,11 @@ import { DocumentTextIcon } from '@heroicons/react/24/outline';
 import { DISPOSITION_TYPES, LOCATIONS, SampleIssue, SampleLineItem, ERPProjectSearchResult } from '../types/sample.types';
 import { getProjectDetails, searchProjects } from '../services/projectService';
 import { listItems, ItemResponse } from '../services/itemsService';
-import { createSampleIssue, listSampleIssues, SampleIssueResponse } from '../services/sampleIssueService';
+import { createSampleIssue, getSampleIssueByDocNumber, listSampleIssues, SampleIssueResponse } from '../services/sampleIssueService';
 import { useToast } from '../components/Toast/ToastContext';
 import { localISODate } from '../utils/date';
 import './SampleIssuePage.css';
+import './SampleIssuePagePrint.css';
 
 const createEmptyIssue = (): SampleIssue => ({
   docNumber: '',
@@ -23,6 +24,108 @@ const createEmptyIssue = (): SampleIssue => ({
   dispositionType: '',
   lineItems: []
 });
+
+function _num(value: any): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+type PrintableSampleIssueDocProps = {
+  formData: SampleIssue;
+};
+
+function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
+  const printedAt = new Date();
+  const totalQty = (formData.lineItems || []).reduce((sum, li) => sum + _num(li.qtyIssue), 0);
+
+  return (
+    <div className="print-doc">
+      <div className="print-header">
+        <div className="print-brand">
+          <img
+            className="print-logo"
+            src={`${process.env.PUBLIC_URL}/Fulllogo.png`}
+            alt="Company logo"
+          />
+          <div>
+            <div className="print-title">Sample Issue</div>
+            <div className="print-subtitle">Printed: {printedAt.toLocaleString()}</div>
+          </div>
+        </div>
+        <div className="print-meta">
+          <div><span className="k">Doc #</span><span className="v">{formData.docNumber || 'N/A'}</span></div>
+          <div><span className="k">Date</span><span className="v">{formData.dateOfIssue || 'N/A'}</span></div>
+          <div><span className="k">Status</span><span className="v">{formData.status || 'N/A'}</span></div>
+          <div><span className="k">Store</span><span className="v">{formData.locationStored || 'N/A'}</span></div>
+        </div>
+      </div>
+
+      <div className="print-section">
+        <div className="print-section-title">Project Information</div>
+        <div className="print-grid">
+          <div><span className="k">Project #</span><span className="v">{formData.projectNumber || 'N/A'}</span></div>
+          <div><span className="k">Customer</span><span className="v">{formData.customerName || 'N/A'}</span></div>
+          <div><span className="k">Salesperson</span><span className="v">{formData.salesperson || 'N/A'}</span></div>
+          <div><span className="k">Project Mgr</span><span className="v">{formData.projectManager || 'N/A'}</span></div>
+          <div><span className="k">Business Unit</span><span className="v">{formData.businessUnit || 'N/A'}</span></div>
+          <div><span className="k">Subsidiary</span><span className="v">{formData.subsidiary || 'N/A'}</span></div>
+          <div><span className="k">Disposition</span><span className="v">{formData.dispositionType || 'N/A'}</span></div>
+        </div>
+      </div>
+
+      <div className="print-section">
+        <div className="print-section-title">Issued Items</div>
+        <table className="print-table">
+          <thead>
+            <tr>
+              <th style={{ width: '40px' }}>#</th>
+              <th>Item</th>
+              <th>Description</th>
+              <th style={{ width: '110px' }}>Qty On Hand</th>
+              <th style={{ width: '90px' }}>Qty Issue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(formData.lineItems || []).length === 0 ? (
+              <tr>
+                <td colSpan={5} className="empty">No line items.</td>
+              </tr>
+            ) : (
+              (formData.lineItems || []).map((li, idx) => (
+                <tr key={`${li.id || ''}:${idx}`}>
+                  <td className="num">{idx + 1}</td>
+                  <td>{li.itemName}</td>
+                  <td>{li.description || ''}</td>
+                  <td className="num">{_num(li.qtyOnHand)}</td>
+                  <td className="num">{_num(li.qtyIssue)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        <div className="print-totals">
+          <div><span className="k">Total Lines</span><span className="v">{(formData.lineItems || []).length}</span></div>
+          <div><span className="k">Total Qty</span><span className="v">{totalQty}</span></div>
+        </div>
+      </div>
+
+      <div className="print-signatures">
+        <div className="sig">
+          <div className="line" />
+          <div className="label">Issued By</div>
+        </div>
+        <div className="sig">
+          <div className="line" />
+          <div className="label">Store Keeper</div>
+        </div>
+        <div className="sig">
+          <div className="line" />
+          <div className="label">Approved By</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const SampleIssuePage: React.FC = () => {
   const toast = useToast();
@@ -40,6 +143,7 @@ const SampleIssuePage: React.FC = () => {
   const [isLoadingProjectDetails, setIsLoadingProjectDetails] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isViewOnly, setIsViewOnly] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const [issuedIssues, setIssuedIssues] = useState<SampleIssueResponse[]>([]);
@@ -145,9 +249,9 @@ const SampleIssuePage: React.FC = () => {
     const loadIssued = async () => {
       setIsLoadingIssued(true);
       try {
-        const pageSize = 8;
+        const pageSize = 100;
         const result = await listSampleIssues({
-          status_filter: 'Issued',
+          status_filter: 'Issued,Returned',
           skip: issuedPage * pageSize,
           limit: pageSize,
         });
@@ -252,6 +356,7 @@ const SampleIssuePage: React.FC = () => {
         lineItems: []
       });
 
+      setIsViewOnly(false);
       setIsFormOpen(true);
     } catch (error) {
       console.error('Failed to load project details:', error);
@@ -261,8 +366,49 @@ const SampleIssuePage: React.FC = () => {
     }
   };
 
+  const handleViewIssue = async (docNumber: string) => {
+    const doc = (docNumber || '').trim();
+    if (!doc) return;
+
+    setIsLoadingProjectDetails(true);
+    try {
+      const issue = await getSampleIssueByDocNumber(doc);
+      const disposition = DISPOSITION_TYPES.includes(issue.disposition_type as any)
+        ? (issue.disposition_type as any)
+        : '';
+      setFormData({
+        docNumber: issue.doc_number,
+        projectNumber: issue.project_number,
+        customerName: issue.customer_name ?? null,
+        salesperson: issue.salesperson ?? null,
+        projectManager: issue.project_manager ?? null,
+        dateOfIssue: String(issue.date_of_issue).slice(0, 10),
+        businessUnit: issue.business_unit ?? null,
+        subsidiary: issue.subsidiary ?? null,
+        locationStored: issue.location_stored ?? '',
+        status: (issue.status as any) || 'Draft',
+        dispositionType: disposition,
+        lineItems: issue.line_items.map((li) => ({
+          id: li.id,
+          itemName: li.item_name,
+          description: li.description || '',
+          qtyOnHand: li.qty_on_hand,
+          qtyIssue: li.qty_issue,
+        })),
+      });
+      setIsViewOnly(true);
+      setIsFormOpen(true);
+    } catch (error: any) {
+      console.error('Failed to load sample issue for view:', error);
+      toast.error(error?.message || 'Unable to load sample issue.');
+    } finally {
+      setIsLoadingProjectDetails(false);
+    }
+  };
+
   const handleBackToSearch = () => {
     setIsFormOpen(false);
+    setIsViewOnly(false);
     setSelectedProject(null);
     setSearchQuery('');
     setDebouncedSearchQuery('');
@@ -275,6 +421,7 @@ const SampleIssuePage: React.FC = () => {
   };
 
   const handleInputChange = (field: keyof SampleIssue, value: any) => {
+    if (isViewOnly) return;
     setFormData({
       ...formData,
       [field]: value
@@ -282,6 +429,7 @@ const SampleIssuePage: React.FC = () => {
   };
 
   const addLineItem = () => {
+    if (isViewOnly) return;
     const newItem: SampleLineItem = {
       id: Date.now().toString(),
       itemName: '',
@@ -296,6 +444,7 @@ const SampleIssuePage: React.FC = () => {
   };
 
   const removeLineItem = (id: string) => {
+    if (isViewOnly) return;
     setFormData({
       ...formData,
       lineItems: formData.lineItems.filter(item => item.id !== id)
@@ -303,6 +452,7 @@ const SampleIssuePage: React.FC = () => {
   };
 
   const updateLineItem = (id: string, field: keyof SampleLineItem, value: any) => {
+    if (isViewOnly) return;
     setFormData({
       ...formData,
       lineItems: formData.lineItems.map(item =>
@@ -312,6 +462,7 @@ const SampleIssuePage: React.FC = () => {
   };
 
   const handleItemSelect = (id: string, itemName: string) => {
+    if (isViewOnly) return;
     if (!itemName) {
       setFormData(prev => ({
         ...prev,
@@ -434,12 +585,18 @@ const SampleIssuePage: React.FC = () => {
   const handleSave = () => _saveIssue('Draft');
   const handleSubmit = () => _saveIssue('Issued');
 
+  const canPrintDoc = Boolean((formData.docNumber || '').trim());
   const handlePrint = () => {
+    if (!canPrintDoc) {
+      toast.warning('You can print after saving draft or submitting.');
+      return;
+    }
     window.print();
   };
 
   return (
     <div className="sample-issue-page">
+      <div className="no-print">
       <div className="project-search-section">
         <h2>Search Project</h2>
         <div className="project-search-wrapper">
@@ -498,7 +655,7 @@ const SampleIssuePage: React.FC = () => {
               className="section-header"
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <h2 style={{ margin: 0 }}>Latest Issued</h2>
+              <h2 style={{ margin: 0 }}>Latest Issued / Returned</h2>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   className="btn btn-secondary"
@@ -510,7 +667,7 @@ const SampleIssuePage: React.FC = () => {
                 <button
                   className="btn btn-secondary"
                   onClick={() => setIssuedPage((p) => p + 1)}
-                  disabled={isLoadingIssued || issuedIssues.length < 8}
+                  disabled={isLoadingIssued || issuedIssues.length < 100}
                 >
                   Next
                 </button>
@@ -523,7 +680,7 @@ const SampleIssuePage: React.FC = () => {
               <div style={{ padding: 12 }}>No issued sample issues found.</div>
             ) : (
               <div className="table-container">
-                <table className="line-items-table">
+                <table className="project-list-table">
                   <thead>
                     <tr>
                       <th>Doc #</th>
@@ -531,7 +688,8 @@ const SampleIssuePage: React.FC = () => {
                       <th>Customer</th>
                       <th>Date</th>
                       <th>Store</th>
-                      <th>Disposition</th>
+                      <th>Business Unit</th>
+                      <th style={{ width: 110 }}>View</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -542,7 +700,18 @@ const SampleIssuePage: React.FC = () => {
                         <td>{iss.customer_name || ''}</td>
                         <td>{String(iss.date_of_issue || '').slice(0, 10)}</td>
                         <td>{iss.location_stored || ''}</td>
-                        <td>{iss.disposition_type}</td>
+                        <td>{iss.business_unit || ''}</td>
+                        <td>
+                          <button
+                            className="btn btn-secondary btn-small"
+                            type="button"
+                            onClick={() => handleViewIssue(iss.doc_number)}
+                            disabled={!iss.doc_number || isLoadingProjectDetails}
+                            title="View document (read-only)"
+                          >
+                            View
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -550,7 +719,7 @@ const SampleIssuePage: React.FC = () => {
               </div>
             )}
 
-            <div style={{ paddingTop: 10, fontSize: 13, opacity: 0.8 }}>Page {issuedPage + 1}</div>
+            <div style={{ paddingTop: 10, fontSize: 13, opacity: 0.8 }} />
           </div>
         </div>
       )}
@@ -599,13 +768,25 @@ const SampleIssuePage: React.FC = () => {
               <button className="btn btn-secondary" onClick={handleBackToSearch} disabled={isSaving}>
                 ← Back to Projects
               </button>
-              <button className="btn btn-secondary" onClick={handleSave} disabled={isSaving}>
-                {isSaving ? 'Saving...' : 'Save Draft'}
+              {isViewOnly ? null : (
+                <>
+                  <button className="btn btn-secondary" onClick={handleSave} disabled={isSaving}>
+                    {isSaving ? 'Saving...' : 'Save Draft'}
+                  </button>
+                  <button className="btn btn-primary" onClick={handleSubmit} disabled={isSaving}>
+                    {isSaving ? 'Submitting...' : 'Submit Issue'}
+                  </button>
+                </>
+              )}
+              <button
+                className={`btn btn-print ${canPrintDoc ? '' : 'btn-disabled'}`}
+                onClick={handlePrint}
+                type="button"
+                title={canPrintDoc ? 'Print' : 'You can print after saving draft or submitting.'}
+                aria-disabled={!canPrintDoc}
+              >
+                Print
               </button>
-              <button className="btn btn-primary" onClick={handleSubmit} disabled={isSaving}>
-                {isSaving ? 'Submitting...' : 'Submit Issue'}
-              </button>
-              <button className="btn btn-secondary" onClick={handlePrint}>Print</button>
             </div>
           </div>
 
@@ -718,6 +899,7 @@ const SampleIssuePage: React.FC = () => {
                     value={formData.locationStored}
                     onChange={(e) => handleInputChange('locationStored', e.target.value)}
                     className="input-field"
+                    disabled={isViewOnly}
                   >
                     <option value="">Select Location</option>
                     {LOCATIONS.map(location => (
@@ -732,6 +914,7 @@ const SampleIssuePage: React.FC = () => {
                     value={formData.dispositionType}
                     onChange={(e) => handleInputChange('dispositionType', e.target.value)}
                     className="input-field"
+                    disabled={isViewOnly}
                   >
                     <option value="">Select Disposition Type</option>
                     {DISPOSITION_TYPES.map(type => (
@@ -745,7 +928,9 @@ const SampleIssuePage: React.FC = () => {
             <div className="form-section">
               <div className="section-header">
                 <h2>Line Items</h2>
-                <button className="btn btn-add" onClick={addLineItem}>+ Add Item</button>
+                {isViewOnly ? null : (
+                  <button className="btn btn-add" onClick={addLineItem}>+ Add Item</button>
+                )}
               </div>
 
               <div className="table-container">
@@ -774,6 +959,7 @@ const SampleIssuePage: React.FC = () => {
                                 value={item.itemName}
                                 onChange={(e) => handleItemSelect(item.id, e.target.value)}
                                 className="table-input"
+                                disabled={isViewOnly}
                               >
                                 <option value="">{isLoadingItems ? 'Loading...' : 'Select Item'}</option>
                                 {[...items]
@@ -792,6 +978,7 @@ const SampleIssuePage: React.FC = () => {
                               onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
                               className="table-input"
                               placeholder="Description"
+                              disabled={isViewOnly}
                             />
                           </td>
                           <td>
@@ -821,15 +1008,18 @@ const SampleIssuePage: React.FC = () => {
                               min="1"
                               max={item.qtyOnHand}
                               placeholder="0"
+                              disabled={isViewOnly}
                             />
                           </td>
                           <td>
-                            <button
-                              className="btn-delete"
-                              onClick={() => removeLineItem(item.id)}
-                            >
-                              Delete
-                            </button>
+                            {isViewOnly ? null : (
+                              <button
+                                className="btn-delete"
+                                onClick={() => removeLineItem(item.id)}
+                              >
+                                Delete
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -850,6 +1040,11 @@ const SampleIssuePage: React.FC = () => {
           </div>
         </>
       )}
+      </div>
+
+      <div className="print-only">
+        <PrintableSampleIssueDoc formData={formData} />
+      </div>
     </div>
   );
 };

@@ -85,6 +85,33 @@
   color: var(--white);
 }
 
+.btn-print {
+  background-color: var(--primary-orange);
+  color: var(--white);
+  border: 2px solid var(--primary-orange);
+}
+
+.btn-print:hover {
+  background-color: #e67a30;
+  border-color: #e67a30;
+}
+
+.btn-print:disabled,
+.btn-print[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-print.btn-disabled:hover {
+  background-color: var(--primary-orange);
+  border-color: var(--primary-orange);
+}
+
 .btn-add {
   background-color: var(--primary-orange);
   color: var(--white);
@@ -357,7 +384,7 @@
 }
 
 .line-items-table th {
-  padding: 16px 14px;
+  padding: 12px 10px;
   text-align: left;
   font-weight: 600;
   font-size: 14px;
@@ -374,7 +401,7 @@
 }
 
 .line-items-table td {
-  padding: 16px 14px;
+  padding: 12px 10px;
   border-bottom: 1px solid var(--border-gray);
   vertical-align: middle;
   position: relative;
@@ -603,18 +630,18 @@ select.table-input option {
 }
 
 .project-list-table th {
-  padding: 16px;
+  padding: 10px 10px;
   text-align: left;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .project-list-table td {
-  padding: 16px;
+  padding: 10px 10px;
   border-bottom: 1px solid #e0e0e0;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .project-list-table tbody tr {

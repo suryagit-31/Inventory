@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { DocumentTextIcon } from '@heroicons/react/24/outline';
 import { LOCATIONS } from '../types/sample.types';
-import { generateDocNumber } from '../data/mockData';
 import { API_BASE_URL } from '../config/api';
 import { useToast } from '../components/Toast/ToastContext';
 import { localISODate } from '../utils/date';
-import { createSampleReturn } from '../services/sampleReturnService';
+import { createSampleReturn, getSampleReturn, listSampleReturnSummaries, SampleReturnResponse, SampleReturnSummary } from '../services/sampleReturnService';
 import { getIssueReturnable, ReturnableLine } from '../services/sampleIssueService';
 import './SampleIssuePage.css';
+import './SampleReturnPagePrint.css';
 
 interface SampleReturnLineItem {
   id: string;
@@ -48,6 +49,277 @@ interface SampleIssueListItem {
   business_unit: string | null;
 }
 
+function _num(value: any): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+type PrintableSampleReturnDocProps = {
+  formData: SampleReturnForm;
+};
+
+type PrintableSampleReturnListDocProps = {
+  listTab: 'issues' | 'returns';
+  searchQuery: string;
+  issuedSamples: SampleIssueListItem[];
+  recentReturns: SampleReturnSummary[];
+  issuesPage: number;
+  returnsPage: number;
+};
+
+function PrintableSampleReturnDoc({
+  formData,
+}: PrintableSampleReturnDocProps) {
+  const totalQtyReturn = formData.lineItems.reduce((sum, li) => sum + _num(li.qtyReturn === '' ? 0 : li.qtyReturn), 0);
+  const lineCountReturned = formData.lineItems.filter((li) => _num(li.qtyReturn === '' ? 0 : li.qtyReturn) > 0).length;
+
+  const isFullReturn =
+    formData.status === 'Returned' &&
+    formData.lineItems.every((li) => {
+      const remaining = _num(li.qtyRemaining);
+      if (remaining <= 0) return true;
+      return _num(li.qtyReturn === '' ? 0 : li.qtyReturn) === remaining;
+    });
+  const scopeLabel = formData.status !== 'Returned' ? 'Draft' : isFullReturn ? 'Full Return' : 'Partial Return';
+
+  const printedAt = new Date();
+
+  return (
+    <div className="print-doc">
+      <div className="print-header">
+        <div className="print-brand">
+          <img
+            className="print-logo"
+            src={`${process.env.PUBLIC_URL}/Fulllogo.png`}
+            alt="Company logo"
+          />
+          <div>
+            <div className="print-title">Sample Return</div>
+            <div className="print-subtitle">Printed: {printedAt.toLocaleString()}</div>
+          </div>
+        </div>
+        <div className="print-meta">
+          <div><span className="k">Return Doc #</span><span className="v">{formData.docNumber || '(Not saved yet)'}</span></div>
+          <div><span className="k">Return Date</span><span className="v">{formData.returnDate || 'N/A'}</span></div>
+          <div><span className="k">Status</span><span className="v">{formData.status}</span></div>
+          <div><span className="k">Scope</span><span className="v">{scopeLabel}</span></div>
+        </div>
+      </div>
+
+      <div className="print-section">
+        <div className="print-section-title">Issue Reference</div>
+        <div className="print-grid">
+          <div><span className="k">Issue Doc #</span><span className="v">{formData.issueDocNumber || 'N/A'}</span></div>
+          <div><span className="k">Issued Date</span><span className="v">{formData.issuedDate ? String(formData.issuedDate).slice(0, 10) : 'N/A'}</span></div>
+          <div><span className="k">Project #</span><span className="v">{formData.projectNumber || 'N/A'}</span></div>
+          <div><span className="k">Customer</span><span className="v">{formData.customerName || 'N/A'}</span></div>
+        </div>
+      </div>
+
+      <div className="print-section">
+        <div className="print-section-title">Return Details</div>
+        <div className="print-grid">
+          <div><span className="k">Store (Issued From)</span><span className="v">{formData.issuedLocation || 'N/A'}</span></div>
+          <div><span className="k">Location Returned</span><span className="v">{formData.locationReturned || 'N/A'}</span></div>
+          <div><span className="k">Returned By</span><span className="v">{formData.returnedBy || 'N/A'}</span></div>
+          <div><span className="k">Reason</span><span className="v">{formData.reason || 'N/A'}</span></div>
+        </div>
+      </div>
+
+      <div className="print-section">
+        <div className="print-section-title">Returned Items</div>
+        <table className="print-table">
+          <thead>
+            <tr>
+              <th style={{ width: '40px' }}>#</th>
+              <th>Item</th>
+              <th>Description</th>
+              <th style={{ width: '90px' }}>Issued</th>
+              <th style={{ width: '90px' }}>Return</th>
+              <th style={{ width: '90px' }}>Remaining</th>
+              <th style={{ width: '110px' }}>Condition</th>
+            </tr>
+          </thead>
+          <tbody>
+            {formData.lineItems.map((li, idx) => (
+              <tr key={li.id}>
+                <td>{idx + 1}</td>
+                <td>{li.itemName}</td>
+                <td>{li.description || ''}</td>
+                <td className="num">{_num(li.qtyIssued)}</td>
+                <td className="num">{_num(li.qtyReturn === '' ? 0 : li.qtyReturn)}</td>
+                <td className="num">{_num(li.qtyRemaining)}</td>
+                <td>{li.condition || ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="print-totals">
+          <div><span className="k">Lines Returned</span><span className="v">{lineCountReturned}</span></div>
+          <div><span className="k">Total Qty Returned</span><span className="v">{totalQtyReturn}</span></div>
+        </div>
+      </div>
+
+      <div className="print-signatures">
+        <div className="sig">
+          <div className="line" />
+          <div className="label">Returned By</div>
+        </div>
+        <div className="sig">
+          <div className="line" />
+          <div className="label">Store Keeper</div>
+        </div>
+        <div className="sig">
+          <div className="line" />
+          <div className="label">Approved By</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrintableSampleReturnListDoc({
+  listTab,
+  searchQuery,
+  issuedSamples,
+  recentReturns,
+  issuesPage,
+  returnsPage,
+}: PrintableSampleReturnListDocProps) {
+  const printedAt = new Date();
+  const title = listTab === 'issues' ? 'Issued Samples (Return List)' : 'Recent Returns';
+  const pageLabel = listTab === 'issues' ? `Page ${issuesPage + 1}` : `Page ${returnsPage + 1}`;
+  const queryLabel = (searchQuery || '').trim();
+
+  return (
+    <div className="print-doc">
+      <div className="print-header">
+        <div className="print-brand">
+          <img
+            className="print-logo"
+            src={`${process.env.PUBLIC_URL}/Fulllogo.png`}
+            alt="Company logo"
+          />
+          <div>
+            <div className="print-title">Sample Return</div>
+            <div className="print-subtitle">
+              {title} • {pageLabel} • Printed: {printedAt.toLocaleString()}
+            </div>
+          </div>
+        </div>
+        <div className="print-meta">
+          <div>
+            <span className="k">Filter</span>
+            <span className="v">{queryLabel ? queryLabel : 'None'}</span>
+          </div>
+          <div>
+            <span className="k">Rows</span>
+            <span className="v">{listTab === 'issues' ? issuedSamples.length : recentReturns.length}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="print-section">
+        <div className="print-section-title">{title}</div>
+
+        {listTab === 'issues' ? (
+          <table className="print-table">
+            <thead>
+              <tr>
+                <th style={{ width: '40px' }}>#</th>
+                <th>Issue Doc #</th>
+                <th>Project ID</th>
+                <th>Customer Name</th>
+                <th style={{ width: '110px' }}>Issue Date</th>
+                <th>Business Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {issuedSamples.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="empty">
+                    {queryLabel ? 'No issued samples found matching the filter.' : 'No issued samples available.'}
+                  </td>
+                </tr>
+              ) : (
+                issuedSamples.map((issue, idx) => (
+                  <tr key={issue.id}>
+                    <td className="num">{idx + 1}</td>
+                    <td>{issue.doc_number || 'N/A'}</td>
+                    <td>{issue.project_number || 'N/A'}</td>
+                    <td>{issue.customer_name || 'N/A'}</td>
+                    <td>{issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : 'N/A'}</td>
+                    <td>{issue.business_unit || 'N/A'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <table className="print-table">
+            <thead>
+              <tr>
+                <th style={{ width: '40px' }}>#</th>
+                <th>Return Doc #</th>
+                <th>Issue Doc #</th>
+                <th>Store</th>
+                <th style={{ width: '110px' }}>Return Date</th>
+                <th style={{ width: '70px' }}>Lines</th>
+                <th style={{ width: '90px' }}>Total Qty</th>
+                <th style={{ width: '110px' }}>Partial/Full</th>
+                <th style={{ width: '90px' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentReturns.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="empty">
+                    No return documents found.
+                  </td>
+                </tr>
+              ) : (
+                recentReturns.map((ret, idx) => (
+                  <tr key={ret.id}>
+                    <td className="num">{idx + 1}</td>
+                    <td>{ret.doc_number || 'N/A'}</td>
+                    <td>{ret.original_issue_doc_number || 'N/A'}</td>
+                    <td>{ret.store_location || 'N/A'}</td>
+                    <td>{ret.date_of_return ? String(ret.date_of_return).slice(0, 10) : 'N/A'}</td>
+                    <td className="num">{ret.line_count ?? 0}</td>
+                    <td className="num">{ret.total_qty_return ?? 0}</td>
+                    <td>{ret.return_scope || 'N/A'}</td>
+                    <td>{ret.status || 'N/A'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function _csvEscape(value: unknown): string {
+  const s = String(value ?? '');
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function _downloadTextFile(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 const SampleReturnPage: React.FC = () => {
   const navigate = useNavigate();
   const { issueDocNumber } = useParams<{ issueDocNumber: string }>();
@@ -55,17 +327,27 @@ const SampleReturnPage: React.FC = () => {
 
   // View state
   const [currentView, setCurrentView] = useState<'list' | 'form'>(issueDocNumber ? 'form' : 'list');
+  const [listTab, setListTab] = useState<'issues' | 'returns'>('issues');
   const [issuedSamples, setIssuedSamples] = useState<SampleIssueListItem[]>([]);
+  const [recentReturns, setRecentReturns] = useState<SampleReturnSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const itemsPerPage = 20;
+  const [returnsSearchQuery, setReturnsSearchQuery] = useState('');
+  const [debouncedReturnsSearchQuery, setDebouncedReturnsSearchQuery] = useState('');
+  const [viewReturn, setViewReturn] = useState<SampleReturnResponse | null>(null);
+  const [isLoadingViewReturn, setIsLoadingViewReturn] = useState(false);
+  const [issuesPage, setIssuesPage] = useState(0);
+  const [issuesHasMore, setIssuesHasMore] = useState(true);
+  const issuesPerPage = 100;
+  const [returnsPage, setReturnsPage] = useState(0);
+  const [returnsHasMore, setReturnsHasMore] = useState(true);
+  const returnsPerPage = 100;
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const returnsSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [formData, setFormData] = useState<SampleReturnForm>({
-    docNumber: generateDocNumber().replace('SI-', 'SR-'),
+    docNumber: '',
     issueDocNumber: issueDocNumber || '',
     originalIssueId: null,
     projectNumber: null,
@@ -106,17 +388,34 @@ const SampleReturnPage: React.FC = () => {
     };
   }, [searchQuery]);
 
+  // Debounce recent returns search query
+  useEffect(() => {
+    if (returnsSearchTimeoutRef.current) {
+      clearTimeout(returnsSearchTimeoutRef.current);
+    }
+
+    returnsSearchTimeoutRef.current = setTimeout(() => {
+      setDebouncedReturnsSearchQuery(returnsSearchQuery);
+    }, 500); // Wait 500ms after user stops typing
+
+    return () => {
+      if (returnsSearchTimeoutRef.current) {
+        clearTimeout(returnsSearchTimeoutRef.current);
+      }
+    };
+  }, [returnsSearchQuery]);
+
   // Load issued samples list
   useEffect(() => {
     const loadIssuedSamples = async () => {
-      if (currentView === 'list') {
+      if (currentView === 'list' && listTab === 'issues') {
         setIsLoading(true);
         try {
           // Fetch issued sample issues from backend
-          const skip = currentPage * itemsPerPage;
+          const skip = issuesPage * issuesPerPage;
           const params = new URLSearchParams({
             skip: String(skip),
-            limit: String(itemsPerPage),
+            limit: String(issuesPerPage),
             status_filter: 'Issued',
           });
 
@@ -133,7 +432,7 @@ const SampleReturnPage: React.FC = () => {
 
           const data = await response.json();
           setIssuedSamples(data);
-          setHasMore(data.length === itemsPerPage);
+          setIssuesHasMore(data.length === issuesPerPage);
         } catch (error) {
           console.error('Failed to load issued samples:', error);
           toast.error('Unable to load issued samples. Please try again.');
@@ -144,7 +443,30 @@ const SampleReturnPage: React.FC = () => {
     };
 
     loadIssuedSamples();
-  }, [currentView, currentPage, debouncedSearchQuery, toast]);
+  }, [currentView, listTab, issuesPage, debouncedSearchQuery, toast]);
+
+  // Load recent returns list
+  useEffect(() => {
+    const loadRecentReturns = async () => {
+      if (currentView === 'list' && listTab === 'returns') {
+        setIsLoading(true);
+        try {
+          const skip = returnsPage * returnsPerPage;
+          const q = debouncedReturnsSearchQuery.trim();
+          const data = await listSampleReturnSummaries({ skip, limit: returnsPerPage, q: q ? q : undefined });
+          setRecentReturns(data);
+          setReturnsHasMore(data.length === returnsPerPage);
+        } catch (error: any) {
+          console.error('Failed to load recent returns:', error);
+          toast.error(error?.message || 'Unable to load recent returns. Please try again.');
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadRecentReturns();
+  }, [currentView, listTab, returnsPage, debouncedReturnsSearchQuery, toast]);
 
   // Load issue details when issueDocNumber changes
   useEffect(() => {
@@ -152,49 +474,44 @@ const SampleReturnPage: React.FC = () => {
       if (issueDocNumber && currentView === 'form') {
         setIsLoading(true);
         try {
-          // Fetch the specific issue by doc_number
-          const response = await fetch(`${API_BASE_URL}/api/sample-issues/?limit=100`);
+          // Fetch the specific issue by doc_number (server-side lookup; does not depend on paging).
+          const response = await fetch(
+            `${API_BASE_URL}/api/sample-issues/doc/${encodeURIComponent(issueDocNumber)}`
+          );
           if (!response.ok) {
             throw new Error('Failed to load issue details');
           }
 
-          const allIssues = await response.json();
-          const issue = allIssues.find((i: any) => i.doc_number === issueDocNumber);
+          const issue = await response.json();
 
-          if (issue) {
-            // Map line items from issue to return line items
-            const returnable: ReturnableLine[] = await getIssueReturnable(issue.id);
-            const returnLineItems: SampleReturnLineItem[] = returnable.map((row) => ({
-              id: `${issue.id}:${row.item_name}`,
-              itemName: row.item_name,
-              description: row.description || '',
-              qtyIssued: row.qty_issued_total,
-              qtyAlreadyReturned: row.qty_returned_total,
-              qtyRemaining: row.qty_remaining,
-              qtyAvailable: row.inventory_qty_available ?? null,
-              qtyReturn: '',
-              condition: ''
-            }));
+          const returnable: ReturnableLine[] = await getIssueReturnable(issue.id);
+          const returnLineItems: SampleReturnLineItem[] = returnable.map((row) => ({
+            id: `${issue.id}:${row.item_name}`,
+            itemName: row.item_name,
+            description: row.description || '',
+            qtyIssued: row.qty_issued_total,
+            qtyAlreadyReturned: row.qty_returned_total,
+            qtyRemaining: row.qty_remaining,
+            qtyAvailable: row.inventory_qty_available ?? null,
+            qtyReturn: '',
+            condition: ''
+          }));
 
-            setFormData({
-              docNumber: '',
-              issueDocNumber: issue.doc_number,
-              originalIssueId: issue.id,
-              projectNumber: issue.project_number,
-              customerName: issue.customer_name,
-              issuedDate: issue.date_of_issue || null,
-              issuedLocation: issue.location_stored || null,
-              returnDate: localISODate(),
-              returnedBy: '',
-              locationReturned: issue.location_stored || '',
-              reason: '',
-              status: 'Draft',
-              lineItems: returnLineItems
-            });
-          } else {
-            toast.error('Issue document not found');
-            navigate('/sample-return');
-          }
+          setFormData({
+            docNumber: '',
+            issueDocNumber: issue.doc_number,
+            originalIssueId: issue.id,
+            projectNumber: issue.project_number,
+            customerName: issue.customer_name,
+            issuedDate: issue.date_of_issue || null,
+            issuedLocation: issue.location_stored || null,
+            returnDate: localISODate(),
+            returnedBy: '',
+            locationReturned: issue.location_stored || '',
+            reason: '',
+            status: 'Draft',
+            lineItems: returnLineItems
+          });
         } catch (error) {
           console.error('Failed to load issue details:', error);
           toast.error('Unable to load issue details. Please try again.');
@@ -229,23 +546,137 @@ const SampleReturnPage: React.FC = () => {
 
   const handleBackToList = () => {
     navigate('/sample-return');
-    setCurrentPage(0);
+    setListTab('issues');
+    setIssuesPage(0);
+    setReturnsPage(0);
   };
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
-    setCurrentPage(0);
+    setIssuesPage(0);
   };
 
-  const handlePreviousPage = () => {
-    if (currentPage > 0) {
-      setCurrentPage(currentPage - 1);
+  const handleReturnsSearchChange = (value: string) => {
+    setReturnsSearchQuery(value);
+    setReturnsPage(0);
+  };
+
+  const handleViewReturn = async (returnId: string) => {
+    const id = (returnId || '').trim();
+    if (!id) return;
+    setIsLoadingViewReturn(true);
+    try {
+      const ret = await getSampleReturn(id);
+      setViewReturn(ret);
+    } catch (error: any) {
+      console.error('Failed to load sample return:', error);
+      toast.error(error?.message || 'Unable to load sample return.');
+    } finally {
+      setIsLoadingViewReturn(false);
     }
   };
 
-  const handleNextPage = () => {
-    if (hasMore) {
-      setCurrentPage(currentPage + 1);
+  const viewReturnModal = viewReturn
+    ? createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setViewReturn(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.35)',
+            zIndex: 200000,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-start',
+            padding: 24,
+            overflow: 'auto',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(980px, 100%)',
+              background: '#fff',
+              borderRadius: 10,
+              boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+              padding: 18,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#2D3E5F' }}>
+                Sample Return (View)
+              </div>
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => setViewReturn(null)}>
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 14 }}>
+              <div><strong>Doc #:</strong> {viewReturn.doc_number}</div>
+              <div><strong>Return Date:</strong> {String(viewReturn.date_of_return || '').slice(0, 10)}</div>
+              <div><strong>Status:</strong> {viewReturn.status}</div>
+            </div>
+
+            <div style={{ marginTop: 12 }} className="table-container">
+              <table className="line-items-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Description</th>
+                    <th style={{ width: 110 }}>Issued</th>
+                    <th style={{ width: 110 }}>Return</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {viewReturn.line_items.map((li) => (
+                    <tr key={li.id}>
+                      <td>{li.item_name}</td>
+                      <td>{li.description || ''}</td>
+                      <td>{li.qty_issued}</td>
+                      <td>{li.qty_return}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  const handleIssuesPreviousPage = () => {
+    if (issuesPage > 0) {
+      setIssuesPage(issuesPage - 1);
+    }
+  };
+
+  const handleIssuesNextPage = () => {
+    if (issuesHasMore) {
+      setIssuesPage(issuesPage + 1);
+    }
+  };
+
+  const handleReturnsPreviousPage = () => {
+    if (returnsPage > 0) {
+      setReturnsPage(returnsPage - 1);
+    }
+  };
+
+  const handleReturnsNextPage = () => {
+    if (returnsHasMore) {
+      setReturnsPage(returnsPage + 1);
+    }
+  };
+
+  const handleSelectTab = (tab: 'issues' | 'returns') => {
+    setListTab(tab);
+    if (tab === 'issues') {
+      setIssuesPage(0);
+    } else {
+      setReturnsPage(0);
     }
   };
 
@@ -361,7 +792,9 @@ const SampleReturnPage: React.FC = () => {
 
       toast.success(`Sample Return submitted (${saved.doc_number})`);
       navigate('/sample-return');
-      setCurrentPage(0);
+      setListTab('issues');
+      setIssuesPage(0);
+      setReturnsPage(0);
       setSearchQuery('');
       setDebouncedSearchQuery('');
     } catch (error: any) {
@@ -370,15 +803,72 @@ const SampleReturnPage: React.FC = () => {
     }
   };
 
-  const handlePrint = () => {
+  const handlePrintList = () => {
     window.print();
+  };
+
+  const canPrintDoc = Boolean((formData.docNumber || '').trim());
+  const handlePrintDoc = () => {
+    if (!canPrintDoc) {
+      toast.warning('You can print after saving draft or submitting.');
+      return;
+    }
+    window.print();
+  };
+
+  const handleDownloadCsv = () => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (listTab === 'issues') {
+      const headers = ['Issue Doc #', 'Project ID', 'Customer Name', 'Issue Date', 'Business Unit'];
+      const rows = issuedSamples.map((issue) => [
+        issue.doc_number || '',
+        issue.project_number || '',
+        issue.customer_name || '',
+        issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : '',
+        issue.business_unit || '',
+      ]);
+      const csv =
+        `${headers.map(_csvEscape).join(',')}\r\n` +
+        rows.map((r) => r.map(_csvEscape).join(',')).join('\r\n') +
+        '\r\n';
+      _downloadTextFile(`sample-return-issued-samples-${today}.csv`, csv, 'text/csv;charset=utf-8');
+      return;
+    }
+
+    const headers = [
+      'Return Doc #',
+      'Issue Doc #',
+      'Store',
+      'Return Date',
+      'Lines',
+      'Total Qty',
+      'Partial/Full',
+      'Status',
+    ];
+    const rows = recentReturns.map((ret) => [
+      ret.doc_number || '',
+      ret.original_issue_doc_number || '',
+      ret.store_location || '',
+      ret.date_of_return ? String(ret.date_of_return).slice(0, 10) : '',
+      ret.line_count ?? 0,
+      ret.total_qty_return ?? 0,
+      ret.return_scope || '',
+      ret.status || '',
+    ]);
+    const csv =
+      `${headers.map(_csvEscape).join(',')}\r\n` +
+      rows.map((r) => r.map(_csvEscape).join(',')).join('\r\n') +
+      '\r\n';
+    _downloadTextFile(`sample-return-recent-returns-${today}.csv`, csv, 'text/csv;charset=utf-8');
   };
 
   // Render list view
   if (currentView === 'list') {
     return (
       <div className="sample-issue-page">
-        {/* Search Section */}
+        <div className="no-print">
+        {/* Header + Tabs */}
         <div style={{
           background: 'linear-gradient(135deg, #3C507F 0%, #2D3E5F 100%)',
           padding: '30px',
@@ -386,106 +876,220 @@ const SampleReturnPage: React.FC = () => {
           marginBottom: '20px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
         }}>
-          <h2 style={{
-            color: 'white',
-            fontSize: '20px',
-            fontWeight: '600',
-            marginBottom: '20px',
-            borderBottom: '1px solid rgba(255,255,255,0.2)',
-            paddingBottom: '15px'
-          }}>
-            Search Issued Sample
-          </h2>
-          <div>
-            <label style={{
-              color: 'white',
-              fontSize: '14px',
-              fontWeight: '500',
-              display: 'block',
-              marginBottom: '10px'
-            }}>
-              Issue Document # / Project ID <span style={{ color: '#ff4444' }}>*</span>
-            </label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type="text"
-                placeholder="Type issue document number or project ID to search..."
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  fontSize: '14px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  backgroundColor: 'white',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                }}
-              />
-              {searchQuery !== debouncedSearchQuery && (
-                <div style={{
-                  position: 'absolute',
-                  right: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  fontSize: '12px',
-                  color: '#666'
-                }}>
-                  Searching...
-                </div>
-              )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+            <h2 style={{ color: 'white', fontSize: '20px', fontWeight: '600', margin: 0 }}>
+              Sample Return
+            </h2>
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                className={listTab === 'issues' ? 'btn btn-primary' : 'btn btn-secondary'}
+                onClick={() => handleSelectTab('issues')}
+                type="button"
+              >
+                Issued Samples
+              </button>
+              <button
+                className={listTab === 'returns' ? 'btn btn-primary' : 'btn btn-secondary'}
+                onClick={() => handleSelectTab('returns')}
+                type="button"
+              >
+                Recent Returns
+              </button>
             </div>
           </div>
+
+          {listTab === 'issues' ? (
+            <div style={{ marginTop: '20px' }}>
+              <label style={{
+                color: 'white',
+                fontSize: '14px',
+                fontWeight: '500',
+                display: 'block',
+                marginBottom: '10px'
+              }}>
+                Issue Document # / Project ID <span style={{ color: '#ff4444' }}>*</span>
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="Type issue document number or project ID to search..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    fontSize: '14px',
+                    border: 'none',
+                    borderRadius: '4px',
+                    backgroundColor: 'white',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  }}
+                />
+                {searchQuery !== debouncedSearchQuery && (
+                  <div style={{
+                    position: 'absolute',
+                    right: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: '12px',
+                    color: '#666'
+                  }}>
+                    Searching...
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: '14px', color: 'rgba(255,255,255,0.9)', fontSize: '14px' }}>
+              Shows the most recent return documents with store, quantities, and Partial/Full status.
+            </div>
+          )}
         </div>
 
         {/* Issues List */}
         <div className="form-card">
           {isLoading ? (
-            <div className="loading-state">Loading issued samples...</div>
+            <div className="loading-state">
+              {listTab === 'issues' ? 'Loading issued samples...' : 'Loading recent returns...'}
+            </div>
           ) : (
             <>
+              {listTab === 'returns' ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '12px',
+                    marginBottom: '12px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button className="btn btn-print" onClick={handlePrintList} type="button">
+                      Print
+                    </button>
+                    <button className="btn btn-secondary" onClick={handleDownloadCsv} type="button">
+                      Download CSV
+                    </button>
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Search returns (Return Doc # / Issue Doc # / Store / Status)..."
+                    value={returnsSearchQuery}
+                    onChange={(e) => handleReturnsSearchChange(e.target.value)}
+                    style={{
+                      width: '420px',
+                      maxWidth: '100%',
+                      padding: '10px 12px',
+                      fontSize: '14px',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                    }}
+                  />
+                </div>
+              ) : null}
+
               <div className="project-list-container">
-                <table className="project-list-table">
-                  <thead>
-                    <tr>
-                      <th>Issue Doc #</th>
-                      <th>Project ID</th>
-                      <th>Customer Name</th>
-                      <th>Issue Date</th>
-                      <th>Business Unit</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {issuedSamples.length === 0 ? (
+                {listTab === 'issues' ? (
+                  <table className="project-list-table">
+                    <thead>
                       <tr>
-                        <td colSpan={6} className="empty-state">
-                          {searchQuery ? 'No issued samples found matching your search.' : 'No issued samples available for return.'}
-                        </td>
+                        <th>Issue Doc #</th>
+                        <th>Project ID</th>
+                        <th>Customer Name</th>
+                        <th>Issue Date</th>
+                        <th>Business Unit</th>
+                        <th>Action</th>
                       </tr>
-                    ) : (
-                      issuedSamples.map((issue) => (
-                        <tr key={issue.id}>
-                          <td className="project-id-cell">{issue.doc_number || 'N/A'}</td>
-                          <td>{issue.project_number || 'N/A'}</td>
-                          <td>{issue.customer_name || 'N/A'}</td>
-                        <td>{issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : 'N/A'}</td>
-                          <td>{issue.business_unit || 'N/A'}</td>
-                          <td>
-                             <button
-                              className="btn btn-accent btn-small"
-                              onClick={() => handleSelectIssue(issue.doc_number)}
-                              disabled={!issue.doc_number}
-                              style={{ opacity: issue.doc_number ? 1 : 0.5, cursor: issue.doc_number ? 'pointer' : 'not-allowed' }}
-                            >
-                              Create Return
-                            </button>
+                    </thead>
+                    <tbody>
+                      {issuedSamples.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="empty-state">
+                            {searchQuery
+                              ? 'No issued samples found matching your search.'
+                              : 'No issued samples available for return.'}
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        issuedSamples.map((issue) => (
+                          <tr key={issue.id}>
+                            <td className="project-id-cell">{issue.doc_number || 'N/A'}</td>
+                            <td>{issue.project_number || 'N/A'}</td>
+                            <td>{issue.customer_name || 'N/A'}</td>
+                            <td>{issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : 'N/A'}</td>
+                            <td>{issue.business_unit || 'N/A'}</td>
+                            <td>
+                              <button
+                                className="btn btn-accent btn-small"
+                                onClick={() => handleSelectIssue(issue.doc_number)}
+                                disabled={!issue.doc_number}
+                                style={{
+                                  opacity: issue.doc_number ? 1 : 0.5,
+                                  cursor: issue.doc_number ? 'pointer' : 'not-allowed'
+                                }}
+                              >
+                                Create Return
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="project-list-table">
+                    <thead>
+                      <tr>
+                        <th>Return Doc #</th>
+                        <th>Issue Doc #</th>
+                        <th>Store</th>
+                        <th>Return Date</th>
+                        <th>Lines</th>
+                        <th>Total Qty</th>
+                        <th>Partial/Full</th>
+                        <th>Status</th>
+                        <th style={{ width: 110 }}>View</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentReturns.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="empty-state">
+                            No return documents found.
+                          </td>
+                        </tr>
+                      ) : (
+                        recentReturns.map((ret) => (
+                          <tr key={ret.id}>
+                            <td className="project-id-cell">{ret.doc_number || 'N/A'}</td>
+                            <td>{ret.original_issue_doc_number || 'N/A'}</td>
+                            <td>{ret.store_location || 'N/A'}</td>
+                            <td>{ret.date_of_return ? String(ret.date_of_return).slice(0, 10) : 'N/A'}</td>
+                            <td>{ret.line_count ?? 0}</td>
+                            <td>{ret.total_qty_return ?? 0}</td>
+                            <td>{ret.return_scope || 'N/A'}</td>
+                            <td>{ret.status || 'N/A'}</td>
+                            <td>
+                              <button
+                                className="btn btn-secondary btn-small"
+                                type="button"
+                                onClick={() => handleViewReturn(ret.id)}
+                                disabled={!ret.id || isLoadingViewReturn}
+                                title="View document (read-only)"
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
               {/* Pagination */}
@@ -498,20 +1102,22 @@ const SampleReturnPage: React.FC = () => {
               }}>
                 <button
                   className="btn btn-secondary"
-                  onClick={handlePreviousPage}
-                  disabled={currentPage === 0}
-                  style={{ opacity: currentPage === 0 ? 0.5 : 1 }}
+                  onClick={listTab === 'issues' ? handleIssuesPreviousPage : handleReturnsPreviousPage}
+                  disabled={listTab === 'issues' ? issuesPage === 0 : returnsPage === 0}
+                  style={{ opacity: listTab === 'issues' ? (issuesPage === 0 ? 0.5 : 1) : (returnsPage === 0 ? 0.5 : 1) }}
                 >
                   ← Previous
                 </button>
                 <span style={{ fontSize: '14px', color: '#666' }}>
-                  Page {currentPage + 1} | Showing {issuedSamples.length} issues
+                  {listTab === 'issues'
+                    ? `Page ${issuesPage + 1} | Showing ${issuedSamples.length} issues`
+                    : `Page ${returnsPage + 1} | Showing ${recentReturns.length} returns`}
                 </span>
                 <button
                   className="btn btn-secondary"
-                  onClick={handleNextPage}
-                  disabled={!hasMore}
-                  style={{ opacity: !hasMore ? 0.5 : 1 }}
+                  onClick={listTab === 'issues' ? handleIssuesNextPage : handleReturnsNextPage}
+                  disabled={listTab === 'issues' ? !issuesHasMore : !returnsHasMore}
+                  style={{ opacity: listTab === 'issues' ? (!issuesHasMore ? 0.5 : 1) : (!returnsHasMore ? 0.5 : 1) }}
                 >
                   Next →
                 </button>
@@ -519,6 +1125,21 @@ const SampleReturnPage: React.FC = () => {
             </>
           )}
         </div>
+        </div>
+
+        {listTab === 'returns' ? (
+          <div className="print-only">
+            <PrintableSampleReturnListDoc
+              listTab={listTab}
+              searchQuery={returnsSearchQuery}
+              issuedSamples={issuedSamples}
+              recentReturns={recentReturns}
+              issuesPage={issuesPage}
+              returnsPage={returnsPage}
+            />
+          </div>
+        ) : null}
+        {viewReturnModal}
       </div>
     );
   }
@@ -526,13 +1147,22 @@ const SampleReturnPage: React.FC = () => {
   // Render form view
   return (
     <div className="sample-issue-page">
+      <div className="no-print">
       <div className="page-header">
         <h1>Sample Return</h1>
         <div className="header-actions">
           <button className="btn btn-secondary" onClick={handleBackToList}>← Back to Issues</button>
           <button className="btn btn-secondary" onClick={handleSave}>Save Draft</button>
           <button className="btn btn-primary" onClick={handleSubmit}>Submit Return</button>
-          <button className="btn btn-secondary" onClick={handlePrint}>Print</button>
+          <button
+            className={`btn btn-print ${canPrintDoc ? '' : 'btn-disabled'}`}
+            onClick={handlePrintDoc}
+            type="button"
+            title={canPrintDoc ? 'Print return document' : 'You can print after saving draft or submitting.'}
+            aria-disabled={!canPrintDoc}
+          >
+            Print
+          </button>
         </div>
       </div>
 
@@ -756,6 +1386,14 @@ const SampleReturnPage: React.FC = () => {
           </div>
         </div>
       </div>
+      </div>
+
+      <div className="print-only">
+        <PrintableSampleReturnDoc
+          formData={formData}
+        />
+      </div>
+      {viewReturnModal}
     </div>
   );
 };

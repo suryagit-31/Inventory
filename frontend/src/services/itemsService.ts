@@ -12,6 +12,16 @@ export type ItemResponse = {
   updated_at: string;
 };
 
+export type ItemSearchResult = {
+  id: string;
+  item_name: string;
+  description?: string | null;
+  location?: string | null;
+  qty_on_hand: number;
+  qty_issued: number;
+  qty_available: number;
+};
+
 export async function listItems(params?: {
   location?: string;
   skip?: number;
@@ -36,3 +46,31 @@ export async function listItems(params?: {
   return await response.json();
 }
 
+export async function searchItems(params: {
+  q: string;
+  limit?: number;
+  location?: string;
+}): Promise<ItemSearchResult[]> {
+  const q = (params.q || '').trim();
+  // Allow empty query when location is provided (so the UI can show "all items in store").
+  const location = (params.location || '').trim();
+  if (!q && !location) return [];
+
+  const search = new URLSearchParams();
+  search.set('q', q);
+  search.set('limit', String(params.limit ?? 10));
+  if (location) search.set('location', location);
+
+  const response = await fetch(`${API_BASE_URL}/api/items/search?${search.toString()}`);
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const json = await response.json();
+      detail = json?.detail || JSON.stringify(json);
+    } catch {
+      // ignore
+    }
+    throw new Error(`Failed to search items: ${detail}`);
+  }
+  return await response.json();
+}

@@ -8,6 +8,7 @@ from datetime import datetime
 from app.database import AppSessionLocal
 from app.models.project import Project
 from app.models.inventory import Item
+from app.models.item_stock import ItemStock
 
 
 def seed_projects(db):
@@ -60,6 +61,7 @@ def seed_items(db):
         {
             "id": str(uuid4()),
             "item_name": "Sample 1",
+            "item_name_key": "SAMPLE1",
             "description": "High-grade steel sample",
             "location": "Sample Store Dubai",
             "qty_on_hand": 50.0,
@@ -69,6 +71,7 @@ def seed_items(db):
         {
             "id": str(uuid4()),
             "item_name": "Sample 123",
+            "item_name_key": "SAMPLE123",
             "description": "Aluminum composite panel",
             "location": "Sample Store Dubai",
             "qty_on_hand": 30.0,
@@ -78,6 +81,7 @@ def seed_items(db):
         {
             "id": str(uuid4()),
             "item_name": "Sample A-200",
+            "item_name_key": "SAMPLEA-200",
             "description": "Thermal insulation material",
             "location": "Main Store UAQ",
             "qty_on_hand": 100.0,
@@ -87,6 +91,7 @@ def seed_items(db):
         {
             "id": str(uuid4()),
             "item_name": "Sample B-150",
+            "item_name_key": "SAMPLEB-150",
             "description": "Waterproofing membrane",
             "location": "Main Store UAQ",
             "qty_on_hand": 75.0,
@@ -103,6 +108,16 @@ def seed_items(db):
         if not existing:
             item = Item(**item_data)
             db.add(item)
+            db.flush()
+
+            stock = ItemStock(
+                id=str(uuid4()),
+                item_id=item.id,
+                location=item_data["location"],
+                qty_on_hand=float(item_data["qty_on_hand"]),
+                qty_issued=float(item_data["qty_issued"]),
+            )
+            db.add(stock)
             print(f"✓ Created item: {item_data['item_name']}")
         else:
             print(f"- Item already exists: {item_data['item_name']}")

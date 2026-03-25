@@ -1,0 +1,163 @@
+.print-only {
+  display: none;
+}
+
+.no-print {
+  display: block;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .print-doc {
+    padding: 0;
+    margin: 0;
+    color: #111;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+  }
+
+  .print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+
+  .print-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .print-logo {
+    height: 34px;
+    width: auto;
+    object-fit: contain;
+  }
+
+  .print-title {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .print-subtitle {
+    font-size: 11px;
+    color: #444;
+    margin-top: 4px;
+  }
+
+  .print-meta {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    min-width: 260px;
+  }
+
+  .print-section {
+    margin-top: 14px;
+  }
+
+  .print-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .print-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+  }
+
+  .k {
+    display: inline-block;
+    min-width: 130px;
+    color: #333;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+
+  .v {
+    color: #111;
+    font-weight: 500;
+  }
+
+  .print-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+  }
+
+  .print-table thead {
+    display: table-header-group;
+  }
+
+  .print-table th,
+  .print-table td {
+    border: 1px solid #ccc;
+    padding: 6px 6px;
+    vertical-align: top;
+  }
+
+  .print-table tr {
+    page-break-inside: avoid;
+  }
+
+  .print-table th {
+    background: #f2f2f2;
+    font-weight: 700;
+  }
+
+  .print-table td.num {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .print-table td.empty {
+    text-align: center;
+    padding: 14px 10px;
+    color: #444;
+  }
+
+  .print-totals {
+    display: flex;
+    justify-content: flex-end;
+    gap: 24px;
+    margin-top: 8px;
+  }
+
+  .print-signatures {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    margin-top: 22px;
+    page-break-inside: avoid;
+  }
+
+  .print-signatures .sig .line {
+    border-bottom: 1px solid #444;
+    height: 18px;
+  }
+
+  .print-signatures .sig .label {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #333;
+    text-align: center;
+  }
+}

@@ -10,6 +10,8 @@ class SampleLineItemBase(BaseModel):
     qty_on_hand: float = Field(..., ge=0)
     qty_issue: float = Field(..., gt=0)
 
+
+class SampleLineItemCreate(SampleLineItemBase):
     @field_validator('qty_issue')
     @classmethod
     def validate_qty_issue(cls, v, info):
@@ -17,10 +19,6 @@ class SampleLineItemBase(BaseModel):
         if qty_on_hand is not None and v > qty_on_hand:
             raise ValueError('Quantity to issue cannot exceed quantity on hand')
         return v
-
-
-class SampleLineItemCreate(SampleLineItemBase):
-    pass
 
 
 class SampleLineItemResponse(SampleLineItemBase):

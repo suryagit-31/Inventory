@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models.inventory import Item
+from app.models.item_stock import ItemStock
 from app.models.sample_issue import SampleIssue, SampleIssueLine
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
@@ -20,21 +21,27 @@ def get_inventory_report(
     Sample Inventory Report
     Shows current inventory status by item and location
     """
-    query = db.query(Item)
+    query = (
+        db.query(ItemStock, Item)
+        .join(Item, Item.id == ItemStock.item_id)
+        .order_by(ItemStock.location.asc(), Item.item_name.asc())
+    )
     if location:
-        query = query.filter(Item.location == location)
+        query = query.filter(ItemStock.location == location)
 
-    items = query.all()
+    rows = query.all()
 
     report_data = []
-    for item in items:
+    for (stock, item) in rows:
+        qty_on_hand = float(stock.qty_on_hand or 0.0)
+        qty_issued = float(stock.qty_issued or 0.0)
         report_data.append({
             "item_name": item.item_name,
-            "description": item.description,
-            "location": item.location,
-            "qty_on_hand": item.qty_on_hand,
-            "qty_issued": item.qty_issued,
-            "qty_available": item.qty_available,
+            "description": stock.description if (stock.description or "").strip() else item.description,
+            "location": stock.location,
+            "qty_on_hand": qty_on_hand,
+            "qty_issued": qty_issued,
+            "qty_available": max(qty_on_hand - qty_issued, 0.0),
         })
 
     return {
@@ -79,7 +86,8 @@ def get_customer_sample_report(
     report_data = []
     for issue in issues:
         for line in issue.line_items:
-            aging_days = (datetime.now() - issue.created_at).days
+            base_date = issue.date_of_issue or issue.created_at
+            aging_days = (datetime.now() - base_date).days if base_date else None
 
             report_data.append({
                 "customer": issue.customer_name,

@@ -1,6 +1,9 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from uuid import uuid4
+
+from app.models.doc_sequence import DocNumberSequence
 
 
 def generate_doc_number(db: Session, table_model, prefix: str) -> str:
@@ -19,23 +22,60 @@ def generate_doc_number(db: Session, table_model, prefix: str) -> str:
     year_month = now.strftime("%Y%m")
     pattern = f"{prefix}-{year_month}-%"
 
-    # Get the last document number for this month
-    last_doc = (
-        db.query(table_model)
-        .filter(table_model.doc_number.like(pattern))
-        .order_by(table_model.doc_number.desc())
-        .first()
-    )
+    # Concurrency-safe allocation using a dedicated sequence table.
+    #
+    # Note: SQL Server doesn't support SELECT ... FOR UPDATE in the same way as some DBs.
+    # We use MSSQL locking hints to serialize increments for a given {prefix, year_month}.
+    for attempt in range(5):
+        try:
+            with db.begin_nested():
+                seq = (
+                    db.query(DocNumberSequence)
+                    .with_hint(DocNumberSequence, "WITH (UPDLOCK, HOLDLOCK)", "mssql")
+                    .filter(DocNumberSequence.prefix == prefix)
+                    .filter(DocNumberSequence.year_month == year_month)
+                    .first()
+                )
 
-    if last_doc:
-        # Extract the sequence number and increment
-        last_sequence = int(last_doc.doc_number.split("-")[-1])
-        new_sequence = last_sequence + 1
-    else:
-        # First document of the month
-        new_sequence = 1
+                if seq is None:
+                    # Seed from existing documents (if any) so deploying to an existing DB
+                    # doesn't start again at 0001 and collide.
+                    last_doc = (
+                        db.query(table_model.doc_number)
+                        .filter(table_model.doc_number.like(pattern))
+                        .order_by(table_model.doc_number.desc())
+                        .first()
+                    )
+                    last_sequence = int(last_doc[0].split("-")[-1]) if last_doc and last_doc[0] else 0
+                    allocated = last_sequence + 1
+                    seq = DocNumberSequence(
+                        id=str(uuid4()),
+                        prefix=prefix,
+                        year_month=year_month,
+                        next_value=allocated + 1,
+                    )
+                    db.add(seq)
+                else:
+                    # If sequence is behind actual docs (manual inserts/imports), jump forward safely.
+                    last_doc = (
+                        db.query(table_model.doc_number)
+                        .filter(table_model.doc_number.like(pattern))
+                        .order_by(table_model.doc_number.desc())
+                        .first()
+                    )
+                    last_sequence = int(last_doc[0].split("-")[-1]) if last_doc and last_doc[0] else 0
+                    min_required = last_sequence + 1
+                    allocated = max(int(seq.next_value), min_required)
+                    seq.next_value = allocated + 1
 
-    # Format: PREFIX-YYYYMM-####
-    doc_number = f"{prefix}-{year_month}-{new_sequence:04d}"
+                db.flush()
 
-    return doc_number
+            return f"{prefix}-{year_month}-{allocated:04d}"
+        except IntegrityError:
+            # Most likely a concurrent insert into the sequence table.
+            # Retry after rolling back to a clean state.
+            db.rollback()
+            if attempt >= 4:
+                raise
+
+    raise RuntimeError("Failed to allocate a document number after retries")
