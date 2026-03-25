@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LOCATIONS } from '../types/sample.types';
 import { useToast } from '../components/Toast/ToastContext';
@@ -186,7 +186,7 @@ const InventoryAddOnPage: React.FC = () => {
     }
   };
 
-  const updateTypeaheadPosition = (rowId: string) => {
+  const updateTypeaheadPosition = useCallback((rowId: string) => {
     const el = itemInputRefs.current.get(rowId);
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -195,12 +195,12 @@ const InventoryAddOnPage: React.FC = () => {
       left: rect.left,
       width: rect.width,
     });
-  };
+  }, []);
 
-  const closeTypeahead = () => {
+  const closeTypeahead = useCallback(() => {
     setTypeahead({ rowId: null, query: '', results: [], isOpen: false, isLoading: false });
     setTypeaheadPos(null);
-  };
+  }, []);
 
   useEffect(() => {
     const rowId = typeahead.rowId;
@@ -228,13 +228,13 @@ const InventoryAddOnPage: React.FC = () => {
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
-  }, [typeahead.rowId, typeahead.query, selectedStore]);
+  }, [selectedStore, typeahead.query, typeahead.rowId, updateTypeaheadPosition]);
 
   // When store changes, clear typeahead and line items (store-scoped inventory add-on).
   useEffect(() => {
     closeTypeahead();
     setFormData((prev) => ({ ...prev, lineItems: [] }));
-  }, [selectedStore]);
+  }, [closeTypeahead, selectedStore]);
 
   useEffect(() => {
     if (!typeahead.isOpen || !typeahead.rowId) return;
@@ -247,7 +247,7 @@ const InventoryAddOnPage: React.FC = () => {
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onResize);
     };
-  }, [typeahead.isOpen, typeahead.rowId]);
+  }, [typeahead.isOpen, typeahead.rowId, updateTypeaheadPosition]);
 
   useEffect(() => {
     if (!typeahead.isOpen || !typeahead.rowId) return;
@@ -271,7 +271,7 @@ const InventoryAddOnPage: React.FC = () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('mousedown', onMouseDown, true);
     };
-  }, [typeahead.isOpen, typeahead.rowId]);
+  }, [closeTypeahead, typeahead.isOpen, typeahead.rowId]);
 
   useEffect(() => {
     const loadRecent = async () => {
@@ -346,7 +346,7 @@ const InventoryAddOnPage: React.FC = () => {
     }
   };
 
-  const handleSelectSuggestion = (rowId: string, item: ItemSearchResult) => {
+  const handleSelectSuggestion = useCallback((rowId: string, item: ItemSearchResult) => {
     let mergedNotices: Array<{ itemName: string; addedQty: number }> = [];
 
     setFormData((prev) => {
@@ -371,7 +371,7 @@ const InventoryAddOnPage: React.FC = () => {
       const first = mergedNotices[0];
       toast.info(`Merged duplicate item lines: ${first.itemName}${first.addedQty ? ` (+${first.addedQty})` : ''}`);
     }
-  };
+  }, [closeTypeahead, toast]);
 
   const typeaheadPortal = useMemo(() => {
     if (!typeahead.isOpen || !typeahead.rowId) return null;
