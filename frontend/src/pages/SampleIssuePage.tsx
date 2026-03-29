@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DocumentTextIcon } from '@heroicons/react/24/outline';
 import { DISPOSITION_TYPES, LOCATIONS, SampleIssue, SampleLineItem, ERPProjectSearchResult } from '../types/sample.types';
+import { API_BASE_URL } from '../config/api';
 import { getProjectDetails, searchProjects } from '../services/projectService';
 import { listItems, ItemResponse } from '../services/itemsService';
 import { createSampleIssue, getSampleIssueByDocNumber, listSampleIssues, SampleIssueResponse } from '../services/sampleIssueService';
@@ -30,6 +31,37 @@ function _num(value: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function _agingDays(value: any): string {
+  const d = new Date(value);
+  if (!value || Number.isNaN(d.getTime())) return 'N/A';
+  const diffMs = Date.now() - d.getTime();
+  const days = Math.floor(diffMs / 86400000);
+  return String(Math.max(0, days));
+}
+
+function _downloadBlob(filename: string, blob: Blob) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function _filenameFromDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const m = value.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+  const raw = (m?.[1] || m?.[2] || '').trim();
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 type PrintableSampleIssueDocProps = {
   formData: SampleIssue;
 };
@@ -37,6 +69,7 @@ type PrintableSampleIssueDocProps = {
 function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
   const printedAt = new Date();
   const totalQty = (formData.lineItems || []).reduce((sum, li) => sum + _num(li.qtyIssue), 0);
+  const printedTime = printedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
   return (
     <div className="print-doc">
@@ -49,7 +82,6 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
           />
           <div>
             <div className="print-title">Sample Issue</div>
-            <div className="print-subtitle">Printed: {printedAt.toLocaleString()}</div>
           </div>
         </div>
         <div className="print-meta">
@@ -57,6 +89,7 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
           <div><span className="k">Date</span><span className="v">{formData.dateOfIssue || 'N/A'}</span></div>
           <div><span className="k">Status</span><span className="v">{formData.status || 'N/A'}</span></div>
           <div><span className="k">Store</span><span className="v">{formData.locationStored || 'N/A'}</span></div>
+          <div><span className="k">Time</span><span className="v">{printedTime}</span></div>
         </div>
       </div>
 
@@ -110,15 +143,11 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
       </div>
 
       <div className="print-signatures">
-        <div className="sig">
+        <div className="sig sig-left">
           <div className="line" />
           <div className="label">Issued By</div>
         </div>
-        <div className="sig">
-          <div className="line" />
-          <div className="label">Store Keeper</div>
-        </div>
-        <div className="sig">
+        <div className="sig sig-right">
           <div className="line" />
           <div className="label">Approved By</div>
         </div>
@@ -251,7 +280,7 @@ const SampleIssuePage: React.FC = () => {
       try {
         const pageSize = 100;
         const result = await listSampleIssues({
-          status_filter: 'Issued,Returned',
+          status_filter: 'Issued,Partial Return,Returned',
           skip: issuedPage * pageSize,
           limit: pageSize,
         });
@@ -403,6 +432,30 @@ const SampleIssuePage: React.FC = () => {
       toast.error(error?.message || 'Unable to load sample issue.');
     } finally {
       setIsLoadingProjectDetails(false);
+    }
+  };
+
+  const handleDownloadIssuedExcel = async () => {
+    try {
+      const pageSize = 100;
+      const skip = issuedPage * pageSize;
+      const qs = new URLSearchParams({
+        skip: String(skip),
+        limit: String(pageSize),
+        status_filter: 'Issued,Partial Return,Returned',
+      });
+      const res = await fetch(`${API_BASE_URL}/api/sample-issues/export.xlsx?${qs.toString()}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `Failed to download excel (${res.status})`);
+      }
+      const blob = await res.blob();
+      const filename = _filenameFromDisposition(res.headers.get('content-disposition')) || 'sample-issues.xlsx';
+      _downloadBlob(filename, blob);
+      toast.success('Excel downloaded.');
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Failed to download Excel.');
     }
   };
 
@@ -671,6 +724,14 @@ const SampleIssuePage: React.FC = () => {
                 >
                   Next
                 </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleDownloadIssuedExcel}
+                  disabled={isLoadingIssued || issuedIssues.length === 0}
+                  type="button"
+                >
+                  Download Excel
+                </button>
               </div>
             </div>
 
@@ -687,6 +748,8 @@ const SampleIssuePage: React.FC = () => {
                       <th>Project</th>
                       <th>Customer</th>
                       <th>Date</th>
+                      <th>Status</th>
+                      <th>Aging (Days)</th>
                       <th>Store</th>
                       <th>Business Unit</th>
                       <th style={{ width: 110 }}>View</th>
@@ -699,6 +762,8 @@ const SampleIssuePage: React.FC = () => {
                         <td>{iss.project_number}</td>
                         <td>{iss.customer_name || ''}</td>
                         <td>{String(iss.date_of_issue || '').slice(0, 10)}</td>
+                        <td>{iss.status || ''}</td>
+                        <td>{_agingDays(iss.date_of_issue)}</td>
                         <td>{iss.location_stored || ''}</td>
                         <td>{iss.business_unit || ''}</td>
                         <td>

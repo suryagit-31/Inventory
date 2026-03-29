@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
+from datetime import date, datetime
 from typing import List
 from uuid import uuid4
 
@@ -9,8 +10,14 @@ from app.models.item_stock import ItemStock
 from app.schemas.inventory import InventoryAddOnCreate, InventoryAddOnResponse, InventoryAddOnLineListItem
 from app.utils.doc_number import generate_doc_number
 from app.utils.normalize import normalize_item_name
+from app.utils.report_xlsx import build_workbook
 
 router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+def _today_suffix() -> str:
+    return date.today().isoformat()
 
 def _get_item_for_update(db: Session, item_name_key: str) -> Item | None:
     return (
@@ -86,6 +93,48 @@ def get_recent_inventory_addon_lines(
         )
         for (line, header) in rows
     ]
+
+
+@router.get("/lines.xlsx")
+def get_recent_inventory_addon_lines_xlsx(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    lines = get_recent_inventory_addon_lines(skip=skip, limit=limit, db=db)
+    rows = [
+        {
+            "doc_number": li.doc_number,
+            "location_store": li.location_store,
+            "item_name": li.item_name,
+            "description": li.description,
+            "quantity": li.quantity,
+            "date": (li.date.isoformat() if hasattr(li.date, "isoformat") else str(li.date))[:10],
+        }
+        for li in lines
+    ]
+    xlsx_bytes = build_workbook(
+        report_name="Recent Inventory Add-Ons",
+        generated_at=datetime.now().isoformat(),
+        filters={"skip": skip, "limit": limit},
+        summary={"rows": len(rows)},
+        rows=rows,
+        column_order=["doc_number", "location_store", "item_name", "description", "quantity", "date"],
+        column_titles={
+            "doc_number": "Doc #",
+            "location_store": "Store",
+            "item_name": "Item",
+            "description": "Description",
+            "quantity": "Qty",
+            "date": "Date",
+        },
+    )
+    filename = f"recent-inventory-addons-{_today_suffix()}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type=_XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{addon_id}", response_model=InventoryAddOnResponse)

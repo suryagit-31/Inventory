@@ -630,18 +630,18 @@ select.table-input option {
 }
 
 .project-list-table th {
-  padding: 10px 10px;
+  padding: 6px 8px;
   text-align: left;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .project-list-table td {
-  padding: 10px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid #e0e0e0;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .project-list-table tbody tr {

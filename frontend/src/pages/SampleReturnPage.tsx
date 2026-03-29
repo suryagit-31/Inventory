@@ -54,6 +54,14 @@ function _num(value: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function _agingDays(value: any): string {
+  const d = new Date(value);
+  if (!value || Number.isNaN(d.getTime())) return 'N/A';
+  const diffMs = Date.now() - d.getTime();
+  const days = Math.floor(diffMs / 86400000);
+  return String(Math.max(0, days));
+}
+
 type PrintableSampleReturnDocProps = {
   formData: SampleReturnForm;
 };
@@ -83,6 +91,7 @@ function PrintableSampleReturnDoc({
   const scopeLabel = formData.status !== 'Returned' ? 'Draft' : isFullReturn ? 'Full Return' : 'Partial Return';
 
   const printedAt = new Date();
+  const printedTime = printedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
   return (
     <div className="print-doc">
@@ -95,7 +104,6 @@ function PrintableSampleReturnDoc({
           />
           <div>
             <div className="print-title">Sample Return</div>
-            <div className="print-subtitle">Printed: {printedAt.toLocaleString()}</div>
           </div>
         </div>
         <div className="print-meta">
@@ -103,6 +111,7 @@ function PrintableSampleReturnDoc({
           <div><span className="k">Return Date</span><span className="v">{formData.returnDate || 'N/A'}</span></div>
           <div><span className="k">Status</span><span className="v">{formData.status}</span></div>
           <div><span className="k">Scope</span><span className="v">{scopeLabel}</span></div>
+          <div><span className="k">Time</span><span className="v">{printedTime}</span></div>
         </div>
       </div>
 
@@ -161,15 +170,11 @@ function PrintableSampleReturnDoc({
       </div>
 
       <div className="print-signatures">
-        <div className="sig">
+        <div className="sig sig-left">
           <div className="line" />
           <div className="label">Returned By</div>
         </div>
-        <div className="sig">
-          <div className="line" />
-          <div className="label">Store Keeper</div>
-        </div>
-        <div className="sig">
+        <div className="sig sig-right">
           <div className="line" />
           <div className="label">Approved By</div>
         </div>
@@ -187,6 +192,7 @@ function PrintableSampleReturnListDoc({
   returnsPage,
 }: PrintableSampleReturnListDocProps) {
   const printedAt = new Date();
+  const printedTime = printedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const title = listTab === 'issues' ? 'Issued Samples (Return List)' : 'Recent Returns';
   const pageLabel = listTab === 'issues' ? `Page ${issuesPage + 1}` : `Page ${returnsPage + 1}`;
   const queryLabel = (searchQuery || '').trim();
@@ -202,15 +208,17 @@ function PrintableSampleReturnListDoc({
           />
           <div>
             <div className="print-title">Sample Return</div>
-            <div className="print-subtitle">
-              {title} • {pageLabel} • Printed: {printedAt.toLocaleString()}
-            </div>
+            <div className="print-subtitle">{title} • {pageLabel}</div>
           </div>
         </div>
         <div className="print-meta">
           <div>
             <span className="k">Filter</span>
             <span className="v">{queryLabel ? queryLabel : 'None'}</span>
+          </div>
+          <div>
+            <span className="k">Time</span>
+            <span className="v">{printedTime}</span>
           </div>
           <div>
             <span className="k">Rows</span>
@@ -300,16 +308,7 @@ function PrintableSampleReturnListDoc({
   );
 }
 
-function _csvEscape(value: unknown): string {
-  const s = String(value ?? '');
-  if (/[",\r\n]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-function _downloadTextFile(filename: string, content: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
+function _downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -318,6 +317,18 @@ function _downloadTextFile(filename: string, content: string, mimeType: string) 
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function _filenameFromDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const m = value.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+  const raw = (m?.[1] || m?.[2] || '').trim();
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 const SampleReturnPage: React.FC = () => {
@@ -416,7 +427,7 @@ const SampleReturnPage: React.FC = () => {
           const params = new URLSearchParams({
             skip: String(skip),
             limit: String(issuesPerPage),
-            status_filter: 'Issued',
+            status_filter: 'Issued,Partial Return',
           });
 
           if (debouncedSearchQuery.trim()) {
@@ -816,51 +827,32 @@ const SampleReturnPage: React.FC = () => {
     window.print();
   };
 
-  const handleDownloadCsv = () => {
-    const today = new Date().toISOString().slice(0, 10);
+  const handleDownloadExcel = async () => {
+    if (listTab !== 'returns') return;
+    try {
+      const skip = returnsPage * returnsPerPage;
+      const qs = new URLSearchParams({
+        skip: String(skip),
+        limit: String(returnsPerPage),
+      });
+      const q = (debouncedReturnsSearchQuery || '').trim();
+      if (q) qs.set('q', q);
 
-    if (listTab === 'issues') {
-      const headers = ['Issue Doc #', 'Project ID', 'Customer Name', 'Issue Date', 'Business Unit'];
-      const rows = issuedSamples.map((issue) => [
-        issue.doc_number || '',
-        issue.project_number || '',
-        issue.customer_name || '',
-        issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : '',
-        issue.business_unit || '',
-      ]);
-      const csv =
-        `${headers.map(_csvEscape).join(',')}\r\n` +
-        rows.map((r) => r.map(_csvEscape).join(',')).join('\r\n') +
-        '\r\n';
-      _downloadTextFile(`sample-return-issued-samples-${today}.csv`, csv, 'text/csv;charset=utf-8');
-      return;
+      const url = `${API_BASE_URL}/api/sample-returns/summaries.xlsx?${qs.toString()}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `Failed to download excel (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const filename = _filenameFromDisposition(res.headers.get('content-disposition')) || 'recent-returns.xlsx';
+      _downloadBlob(filename, blob);
+      toast.success('Excel downloaded.');
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Failed to download Excel.');
     }
-
-    const headers = [
-      'Return Doc #',
-      'Issue Doc #',
-      'Store',
-      'Return Date',
-      'Lines',
-      'Total Qty',
-      'Partial/Full',
-      'Status',
-    ];
-    const rows = recentReturns.map((ret) => [
-      ret.doc_number || '',
-      ret.original_issue_doc_number || '',
-      ret.store_location || '',
-      ret.date_of_return ? String(ret.date_of_return).slice(0, 10) : '',
-      ret.line_count ?? 0,
-      ret.total_qty_return ?? 0,
-      ret.return_scope || '',
-      ret.status || '',
-    ]);
-    const csv =
-      `${headers.map(_csvEscape).join(',')}\r\n` +
-      rows.map((r) => r.map(_csvEscape).join(',')).join('\r\n') +
-      '\r\n';
-    _downloadTextFile(`sample-return-recent-returns-${today}.csv`, csv, 'text/csv;charset=utf-8');
   };
 
   // Render list view
@@ -970,8 +962,8 @@ const SampleReturnPage: React.FC = () => {
                     <button className="btn btn-print" onClick={handlePrintList} type="button">
                       Print
                     </button>
-                    <button className="btn btn-secondary" onClick={handleDownloadCsv} type="button">
-                      Download CSV
+                    <button className="btn btn-secondary" onClick={handleDownloadExcel} type="button">
+                      Download Excel
                     </button>
                   </div>
 
@@ -1001,6 +993,8 @@ const SampleReturnPage: React.FC = () => {
                         <th>Project ID</th>
                         <th>Customer Name</th>
                         <th>Issue Date</th>
+                        <th>Status</th>
+                        <th>Aging (Days)</th>
                         <th>Business Unit</th>
                         <th>Action</th>
                       </tr>
@@ -1008,7 +1002,7 @@ const SampleReturnPage: React.FC = () => {
                     <tbody>
                       {issuedSamples.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="empty-state">
+                          <td colSpan={8} className="empty-state">
                             {searchQuery
                               ? 'No issued samples found matching your search.'
                               : 'No issued samples available for return.'}
@@ -1021,6 +1015,8 @@ const SampleReturnPage: React.FC = () => {
                             <td>{issue.project_number || 'N/A'}</td>
                             <td>{issue.customer_name || 'N/A'}</td>
                             <td>{issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : 'N/A'}</td>
+                            <td>{issue.status || 'N/A'}</td>
+                            <td>{_agingDays(issue.date_of_issue)}</td>
                             <td>{issue.business_unit || 'N/A'}</td>
                             <td>
                               <button

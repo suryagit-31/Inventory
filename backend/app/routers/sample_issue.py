@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import func
-from typing import List, Optional
+from datetime import date, datetime
+from typing import Any, List, Optional
 from collections import defaultdict
 from uuid import uuid4
 
@@ -19,8 +20,75 @@ from app.schemas.sample_issue import (
 )
 from app.utils.doc_number import generate_doc_number
 from app.utils.normalize import normalize_item_name
+from app.utils.report_xlsx import build_workbook
 
 router = APIRouter(prefix="/api/sample-issues", tags=["Sample Issues"])
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+def _today_suffix() -> str:
+    return date.today().isoformat()
+
+def _effective_issue_status(issued_total: float, returned_total: float) -> str:
+    """
+    Derive an issue status from movement totals.
+    - Issued: nothing returned yet
+    - Partial Return: some returned but not all
+    - Returned: fully returned
+    """
+    issued = float(issued_total or 0.0)
+    returned = float(returned_total or 0.0)
+    if issued <= 0:
+        return "Issued"
+    if returned >= issued:
+        return "Returned"
+    if returned > 0:
+        return "Partial Return"
+    return "Issued"
+
+
+def _apply_effective_statuses(db: Session, issues: list[SampleIssue]) -> None:
+    """
+    For legacy data (e.g., before Partial Return existed), compute and override
+    response status without writing to DB.
+    """
+    ids = [i.id for i in issues if i and i.id]
+    if not ids:
+        return
+
+    issued_rows = (
+        db.query(
+            SampleIssueLine.header_id.label("issue_id"),
+            func.coalesce(func.sum(SampleIssueLine.qty_issue), 0.0).label("qty_issued_total"),
+        )
+        .filter(SampleIssueLine.header_id.in_(ids))
+        .group_by(SampleIssueLine.header_id)
+        .all()
+    )
+    issued_totals = {r.issue_id: float(r.qty_issued_total or 0.0) for r in issued_rows}
+
+    returned_rows = (
+        db.query(
+            SampleReturn.original_issue_id.label("issue_id"),
+            func.coalesce(func.sum(SampleReturnLine.qty_return), 0.0).label("qty_returned_total"),
+        )
+        .join(SampleReturnLine, SampleReturn.id == SampleReturnLine.header_id)
+        .filter(SampleReturn.status == "Returned")
+        .filter(SampleReturn.original_issue_id.in_(ids))
+        .group_by(SampleReturn.original_issue_id)
+        .all()
+    )
+    returned_totals = {r.issue_id: float(r.qty_returned_total or 0.0) for r in returned_rows}
+
+    for issue in issues:
+        if not issue:
+            continue
+        if issue.status == "Draft":
+            continue
+        issued_total = issued_totals.get(issue.id, 0.0)
+        returned_total = returned_totals.get(issue.id, 0.0)
+        issue.status = _effective_issue_status(issued_total, returned_total)
+
 
 def _available(qty_on_hand: float | None, qty_issued: float | None) -> float:
     return max(float(qty_on_hand or 0.0) - float(qty_issued or 0.0), 0.0)
@@ -68,12 +136,85 @@ def get_all_sample_issues(
         if skip:
             query = query.offset(skip)
         issues = query.limit(limit).all()
+        _apply_effective_statuses(db, issues)
         return issues
     except SQLAlchemyError as exc:
         # For the list endpoint, degrade to "no data" on DB errors so the UI can render an empty
         # state (and not spin on repeated 500s during setup/misconfiguration).
         print(f"Warning: failed to query sample_issues: {exc}")
         return []
+
+
+@router.get("/export.xlsx")
+def export_sample_issues_xlsx(
+    skip: int = 0,
+    limit: int = 100,
+    status_filter: Optional[str] = None,
+    project_number: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Export sample issues list as XLSX (intended for the "Latest Issued / Returned" list).
+    """
+    issues = get_all_sample_issues(
+        skip=skip,
+        limit=limit,
+        status_filter=status_filter,
+        project_number=project_number,
+        db=db,
+    )
+    now = datetime.now()
+
+    data: list[dict[str, Any]] = []
+    for iss in issues:
+        dt = iss.date_of_issue
+        aging = (now - dt).days if dt else None
+        data.append(
+            {
+                "doc_number": iss.doc_number,
+                "project_number": iss.project_number,
+                "customer_name": iss.customer_name,
+                "date_of_issue": (dt.isoformat() if dt else None)[:10] if dt else None,
+                "status": iss.status,
+                "aging_days": aging,
+                "location_stored": iss.location_stored,
+                "business_unit": iss.business_unit,
+            }
+        )
+
+    xlsx_bytes = build_workbook(
+        report_name="Latest Sample Issues",
+        generated_at=now.isoformat(),
+        filters={"skip": skip, "limit": limit, "status_filter": status_filter, "project_number": project_number},
+        summary={"rows": len(data)},
+        rows=data,
+        column_order=[
+            "doc_number",
+            "project_number",
+            "customer_name",
+            "date_of_issue",
+            "status",
+            "aging_days",
+            "location_stored",
+            "business_unit",
+        ],
+        column_titles={
+            "doc_number": "Doc #",
+            "project_number": "Project",
+            "customer_name": "Customer",
+            "date_of_issue": "Date",
+            "status": "Status",
+            "aging_days": "Aging (Days)",
+            "location_stored": "Store",
+            "business_unit": "Business Unit",
+        },
+    )
+    filename = f"sample-issues-{_today_suffix()}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type=_XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{issue_id}", response_model=SampleIssueResponse)
@@ -85,6 +226,7 @@ def get_sample_issue(issue_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sample issue with id {issue_id} not found"
         )
+    _apply_effective_statuses(db, [issue])
     return issue
 
 
@@ -97,6 +239,7 @@ def get_sample_issue_by_doc_number(doc_number: str, db: Session = Depends(get_db
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sample issue with doc number {doc_number} not found",
         )
+    _apply_effective_statuses(db, [issue])
     return issue
 
 

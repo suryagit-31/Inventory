@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LOCATIONS } from '../types/sample.types';
+import { API_BASE_URL } from '../config/api';
 import { useToast } from '../components/Toast/ToastContext';
 import { createInventoryAddOn, getInventoryAddOn, InventoryAddOnResponse, listRecentInventoryAddOnLines, InventoryAddOnLineListItem } from '../services/inventoryService';
 import { searchItems, ItemSearchResult } from '../services/itemsService';
@@ -27,8 +28,32 @@ type PrintableInventoryAddOnDocProps = {
   recentLines: InventoryAddOnLineListItem[];
 };
 
+function _downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function _filenameFromDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const m = value.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+  const raw = (m?.[1] || m?.[2] || '').trim();
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function PrintableInventoryAddOnDoc({ recentLines }: PrintableInventoryAddOnDocProps) {
   const printedAt = new Date();
+  const printedTime = printedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const totalQty = (recentLines || []).reduce((sum, row) => sum + Number(row.quantity || 0), 0);
 
   return (
@@ -42,12 +67,12 @@ function PrintableInventoryAddOnDoc({ recentLines }: PrintableInventoryAddOnDocP
           />
           <div>
             <div className="print-title">Inventory Add-Ons</div>
-            <div className="print-subtitle">Printed: {printedAt.toLocaleString()}</div>
           </div>
         </div>
         <div className="print-meta">
           <div><span className="k">Rows</span><span className="v">{recentLines.length}</span></div>
           <div><span className="k">Total Qty</span><span className="v">{totalQty}</span></div>
+          <div><span className="k">Time</span><span className="v">{printedTime}</span></div>
         </div>
       </div>
 
@@ -485,6 +510,25 @@ const InventoryAddOnPage: React.FC = () => {
     window.print();
   };
 
+  const handleDownloadRecentExcel = async () => {
+    try {
+      const skip = recentPage * pageSize;
+      const qs = new URLSearchParams({ skip: String(skip), limit: String(pageSize) });
+      const res = await fetch(`${API_BASE_URL}/api/inventory/lines.xlsx?${qs.toString()}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `Failed to download excel (${res.status})`);
+      }
+      const blob = await res.blob();
+      const filename = _filenameFromDisposition(res.headers.get('content-disposition')) || 'recent-inventory-addons.xlsx';
+      _downloadBlob(filename, blob);
+      toast.success('Excel downloaded.');
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Failed to download Excel.');
+    }
+  };
+
   return (
     <div className="sample-issue-page">
       <div className="no-print">
@@ -702,6 +746,14 @@ const InventoryAddOnPage: React.FC = () => {
                 disabled={!recentHasMore || isLoadingRecent}
               >
                 Next
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleDownloadRecentExcel}
+                type="button"
+                disabled={isLoadingRecent || recentLines.length === 0}
+              >
+                Download Excel
               </button>
               <button
                 className="btn btn-print"

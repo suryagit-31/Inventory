@@ -25,6 +25,9 @@
     color: #111;
     font-family: Arial, Helvetica, sans-serif;
     font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 95vh;
   }
 
   .print-header {
@@ -142,22 +145,46 @@
   }
 
   .print-signatures {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    display: flex;
+    justify-content: space-between;
     gap: 24px;
-    margin-top: 22px;
+    margin-top: 26px;
     page-break-inside: avoid;
   }
 
+  .print-signatures .sig {
+    display: flex;
+    flex-direction: column;
+    max-width: 48%;
+  }
+
+  .print-signatures .sig.sig-left {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .print-signatures .sig.sig-right {
+    align-items: flex-end;
+    text-align: right;
+  }
+
   .print-signatures .sig .line {
+    width: 260px;
     border-bottom: 1px solid #444;
-    height: 18px;
+    height: 1px;
+    margin-top: 48px; /* signing space */
   }
 
   .print-signatures .sig .label {
     margin-top: 6px;
     font-size: 11px;
     color: #333;
-    text-align: center;
+  }
+
+  .print-footer {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    text-align: right;
   }
 }

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
+from datetime import date, datetime
 from typing import List
 from collections import defaultdict
 from uuid import uuid4
@@ -13,8 +14,14 @@ from app.models.item_stock import ItemStock
 from app.schemas.sample_return import SampleReturnCreate, SampleReturnResponse, SampleReturnSummary
 from app.utils.doc_number import generate_doc_number
 from app.utils.normalize import normalize_item_name
+from app.utils.report_xlsx import build_workbook
 
 router = APIRouter(prefix="/api/sample-returns", tags=["Sample Returns"])
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+def _today_suffix() -> str:
+    return date.today().isoformat()
 
 def _get_item_for_update(db: Session, item_name: str) -> Item | None:
     key = normalize_item_name(item_name or "")
@@ -137,6 +144,62 @@ def list_sample_return_summaries(
     return result
 
 
+@router.get("/summaries.xlsx")
+def list_sample_return_summaries_xlsx(
+    skip: int = 0,
+    limit: int = 50,
+    q: str | None = None,
+    db: Session = Depends(get_db),
+):
+    rows = list_sample_return_summaries(skip=skip, limit=limit, q=q, db=db)
+    data = [
+        {
+            "doc_number": r.doc_number,
+            "original_issue_doc_number": r.original_issue_doc_number,
+            "store_location": r.store_location,
+            "date_of_return": (r.date_of_return.isoformat() if hasattr(r.date_of_return, "isoformat") else str(r.date_of_return))[:10],
+            "line_count": r.line_count,
+            "total_qty_return": r.total_qty_return,
+            "return_scope": r.return_scope,
+            "status": r.status,
+        }
+        for r in rows
+    ]
+    xlsx_bytes = build_workbook(
+        report_name="Recent Returns",
+        generated_at=datetime.now().isoformat(),
+        filters={"skip": skip, "limit": limit, "q": q},
+        summary={"rows": len(data)},
+        rows=data,
+        column_order=[
+            "doc_number",
+            "original_issue_doc_number",
+            "store_location",
+            "date_of_return",
+            "line_count",
+            "total_qty_return",
+            "return_scope",
+            "status",
+        ],
+        column_titles={
+            "doc_number": "Return Doc #",
+            "original_issue_doc_number": "Issue Doc #",
+            "store_location": "Store",
+            "date_of_return": "Return Date",
+            "line_count": "Lines",
+            "total_qty_return": "Total Qty",
+            "return_scope": "Partial/Full",
+            "status": "Status",
+        },
+    )
+    filename = f"recent-returns-{_today_suffix()}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type=_XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{return_id}", response_model=SampleReturnResponse)
 def get_sample_return(return_id: str, db: Session = Depends(get_db)):
     """Get a specific sample return by ID"""
@@ -163,7 +226,7 @@ def create_sample_return(sample_return: SampleReturnCreate, db: Session = Depend
                 detail=f"Original sample issue with id {sample_return.original_issue_id} not found"
             )
 
-        if original_issue.status != "Issued":
+        if original_issue.status not in ("Issued", "Partial Return"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Can only create returns for issued samples (current status: {original_issue.status})"
@@ -270,8 +333,11 @@ def create_sample_return(sample_return: SampleReturnCreate, db: Session = Depend
             total_issued = sum(issued_by_item.values())
             total_already_returned = sum(already_returned_by_item.values())
             total_requested = sum(requested_by_item.values())
-            if (total_already_returned + total_requested) >= total_issued:
+            total_after = total_already_returned + total_requested
+            if total_after >= total_issued:
                 original_issue.status = "Returned"
+            elif total_after > 0:
+                original_issue.status = "Partial Return"
 
         db.commit()
         db.refresh(db_return)

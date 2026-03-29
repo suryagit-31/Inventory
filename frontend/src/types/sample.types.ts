@@ -48,7 +48,7 @@ export interface SampleIssue {
   businessUnit: string | null;
   subsidiary: string | null;
   locationStored: string;
-  status: 'Draft' | 'Issued' | 'Returned' | 'Closed';
+  status: 'Draft' | 'Issued' | 'Partial Return' | 'Returned';
   dispositionType: DispositionType | '';
   lineItems: SampleLineItem[];
 }
@@ -74,6 +74,6 @@ export const LOCATIONS = [
 export const STATUS_OPTIONS = [
   'Draft',
   'Issued',
-  'Returned',
-  'Closed'
+  'Partial Return',
+  'Returned'
 ];

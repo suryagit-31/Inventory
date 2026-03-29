@@ -50,7 +50,7 @@ class SampleIssueCreate(SampleIssueBase):
     @field_validator('status')
     @classmethod
     def validate_status(cls, v):
-        allowed_statuses = ['Draft', 'Issued', 'Returned', 'Closed']
+        allowed_statuses = ['Draft', 'Issued', 'Partial Return', 'Returned']
         if v not in allowed_statuses:
             raise ValueError(f'Status must be one of: {", ".join(allowed_statuses)}')
         return v
@@ -73,7 +73,7 @@ class SampleIssueUpdate(BaseModel):
     @classmethod
     def validate_status(cls, v):
         if v is not None:
-            allowed_statuses = ['Draft', 'Issued', 'Returned', 'Closed']
+            allowed_statuses = ['Draft', 'Issued', 'Partial Return', 'Returned']
             if v not in allowed_statuses:
                 raise ValueError(f'Status must be one of: {", ".join(allowed_statuses)}')
         return v

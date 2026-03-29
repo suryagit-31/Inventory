@@ -134,4 +134,12 @@
     gap: 24px;
     margin-top: 8px;
   }
+
+  .print-footer {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    text-align: right;
+    page-break-inside: avoid;
+  }
 }
