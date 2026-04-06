@@ -17,15 +17,15 @@ const ReportsPage: React.FC = () => {
   const [appliedInventoryLocation, setAppliedInventoryLocation] = useState<string>('');
 
   const [customerName, setCustomerName] = useState<string>('');
-  const [projectNumber, setProjectNumber] = useState<string>('');
+  const [projectId, setProjectId] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [appliedCustomerFilters, setAppliedCustomerFilters] = useState<{
     customerName: string;
-    projectNumber: string;
+    projectId: string;
     dateFrom: string;
     dateTo: string;
-  }>({ customerName: '', projectNumber: '', dateFrom: '', dateTo: '' });
+  }>({ customerName: '', projectId: '', dateFrom: '', dateTo: '' });
 
   const [isLoadingInventory, setIsLoadingInventory] = useState(false);
   const [isLoadingCustomer, setIsLoadingCustomer] = useState(false);
@@ -120,7 +120,7 @@ const ReportsPage: React.FC = () => {
     try {
       const qs = new URLSearchParams();
       if (appliedCustomerFilters.customerName.trim()) qs.set('customer_name', appliedCustomerFilters.customerName.trim());
-      if (appliedCustomerFilters.projectNumber.trim()) qs.set('project_number', appliedCustomerFilters.projectNumber.trim());
+      if (appliedCustomerFilters.projectId.trim()) qs.set('project_id', appliedCustomerFilters.projectId.trim());
       if (appliedCustomerFilters.dateFrom) qs.set('date_from', appliedCustomerFilters.dateFrom);
       if (appliedCustomerFilters.dateTo) qs.set('date_to', appliedCustomerFilters.dateTo);
       const url = `${API_BASE_URL}/api/reports/customer-samples${qs.toString() ? `?${qs.toString()}` : ''}`;
@@ -169,13 +169,13 @@ const ReportsPage: React.FC = () => {
   };
 
   const applyCustomerFilters = async () => {
-    const next = { customerName, projectNumber, dateFrom, dateTo };
+    const next = { customerName, projectId, dateFrom, dateTo };
     setAppliedCustomerFilters(next);
     setIsLoadingCustomer(true);
     try {
       const qs = new URLSearchParams();
       if (next.customerName.trim()) qs.set('customer_name', next.customerName.trim());
-      if (next.projectNumber.trim()) qs.set('project_number', next.projectNumber.trim());
+      if (next.projectId.trim()) qs.set('project_id', next.projectId.trim());
       if (next.dateFrom) qs.set('date_from', next.dateFrom);
       if (next.dateTo) qs.set('date_to', next.dateTo);
       const url = `${API_BASE_URL}/api/reports/customer-samples${qs.toString() ? `?${qs.toString()}` : ''}`;
@@ -411,22 +411,22 @@ const ReportsPage: React.FC = () => {
               </div>
             </label>
             <label>
-              Project Number (optional)
+              Project ID (optional)
               <div className="reports-typeahead">
                 <input
-                  value={projectNumber}
+                  value={projectId}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setProjectNumber(v);
+                    setProjectId(v);
                     setShowProjectDropdown(true);
                     loadProjectSuggestions(v);
                   }}
                   onFocus={() => {
                     setShowProjectDropdown(true);
-                    loadProjectSuggestions(projectNumber);
+                    loadProjectSuggestions(projectId);
                   }}
                   onBlur={() => window.setTimeout(() => setShowProjectDropdown(false), 120)}
-                  placeholder="Project number"
+                  placeholder="Project ID"
                 />
                 {showProjectDropdown ? (
                   <div className="reports-dropdown">
@@ -442,7 +442,7 @@ const ReportsPage: React.FC = () => {
                           className="reports-dropdown-row"
                           onMouseDown={(ev) => {
                             ev.preventDefault();
-                            setProjectNumber(p);
+                            setProjectId(p);
                             setShowProjectDropdown(false);
                           }}
                         >
@@ -476,7 +476,7 @@ const ReportsPage: React.FC = () => {
                   '/api/reports/customer-samples.xlsx',
                   {
                     customer_name: appliedCustomerFilters.customerName || undefined,
-                    project_number: appliedCustomerFilters.projectNumber || undefined,
+                    project_id: appliedCustomerFilters.projectId || undefined,
                     date_from: appliedCustomerFilters.dateFrom || undefined,
                     date_to: appliedCustomerFilters.dateTo || undefined,
                   },
@@ -499,7 +499,7 @@ const ReportsPage: React.FC = () => {
                 <thead>
                   <tr>
                     <th>Customer</th>
-                    <th>Project</th>
+                    <th>Project ID</th>
                     <th>Item</th>
                     <th className="num">Issued Qty</th>
                     <th className="num">Returned Qty</th>
@@ -514,7 +514,7 @@ const ReportsPage: React.FC = () => {
                     .map((r, idx) => (
                     <tr key={`${r.doc_number || ''}:${r.item_name || ''}:${idx}`}>
                       <td>{r.customer}</td>
-                      <td>{r.project_number}</td>
+                      <td>{r.project_id}</td>
                       <td>{r.item_name}</td>
                       <td className="num">{Number(r.qty_issued ?? 0)}</td>
                       <td className="num">{Number(r.qty_returned ?? 0)}</td>

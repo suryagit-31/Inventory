@@ -1,6 +1,6 @@
 export interface Project {
   id: string;
-  projectNumber: string;
+  projectId: string;
   customerName: string;
   salesperson: string;
   projectManager: string;
@@ -33,6 +33,7 @@ export interface Item {
 export interface SampleLineItem {
   id: string;
   itemName: string;
+  workId: string;
   description: string;
   qtyOnHand: number;
   qtyIssue: number | '';
@@ -40,7 +41,7 @@ export interface SampleLineItem {
 
 export interface SampleIssue {
   docNumber: string;
-  projectNumber: string;
+  projectId: string;
   customerName: string | null;
   salesperson: string | null;
   projectManager: string | null;
@@ -57,13 +58,15 @@ export type DispositionType =
   | 'Scrapping'
   | 'Used in Main Project'
   | 'Missing'
-  | 'Issued to Customer';
+  | 'Issued to Customer'
+  | 'Issued out for Rework';
 
 export const DISPOSITION_TYPES: DispositionType[] = [
   'Scrapping',
   'Used in Main Project',
   'Missing',
-  'Issued to Customer'
+  'Issued to Customer',
+  'Issued out for Rework'
 ];
 
 export const LOCATIONS = [

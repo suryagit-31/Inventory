@@ -3,21 +3,21 @@ import { Project, Item } from '../types/sample.types';
 export const mockProjects: Project[] = [
   {
     id: '1',
-    projectNumber: 'PRJ-2026-001',
+    projectId: 'PRJ-2026-001',
     customerName: 'ABC Construction LLC',
     salesperson: 'John Smith',
     projectManager: 'Sarah Johnson'
   },
   {
     id: '2',
-    projectNumber: 'PRJ-2026-002',
+    projectId: 'PRJ-2026-002',
     customerName: 'XYZ Development Corp',
     salesperson: 'Mike Brown',
     projectManager: 'Emily Davis'
   },
   {
     id: '3',
-    projectNumber: 'PRJ-2026-003',
+    projectId: 'PRJ-2026-003',
     customerName: 'Gulf Engineering Solutions',
     salesperson: 'Ahmed Al-Farsi',
     projectManager: 'Mohammed Hassan'

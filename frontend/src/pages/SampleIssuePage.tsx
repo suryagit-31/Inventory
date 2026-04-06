@@ -13,7 +13,7 @@ import './SampleIssuePagePrint.css';
 
 const createEmptyIssue = (): SampleIssue => ({
   docNumber: '',
-  projectNumber: '',
+  projectId: '',
   customerName: null,
   salesperson: null,
   projectManager: null,
@@ -96,7 +96,7 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
       <div className="print-section">
         <div className="print-section-title">Project Information</div>
         <div className="print-grid">
-          <div><span className="k">Project #</span><span className="v">{formData.projectNumber || 'N/A'}</span></div>
+          <div><span className="k">Project ID</span><span className="v">{formData.projectId || 'N/A'}</span></div>
           <div><span className="k">Customer</span><span className="v">{formData.customerName || 'N/A'}</span></div>
           <div><span className="k">Salesperson</span><span className="v">{formData.salesperson || 'N/A'}</span></div>
           <div><span className="k">Project Mgr</span><span className="v">{formData.projectManager || 'N/A'}</span></div>
@@ -113,6 +113,7 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
             <tr>
               <th style={{ width: '40px' }}>#</th>
               <th>Item</th>
+              <th>Work ID</th>
               <th>Description</th>
               <th style={{ width: '110px' }}>Qty On Hand</th>
               <th style={{ width: '90px' }}>Qty Issue</th>
@@ -121,13 +122,14 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
           <tbody>
             {(formData.lineItems || []).length === 0 ? (
               <tr>
-                <td colSpan={5} className="empty">No line items.</td>
+                <td colSpan={6} className="empty">No line items.</td>
               </tr>
             ) : (
               (formData.lineItems || []).map((li, idx) => (
                 <tr key={`${li.id || ''}:${idx}`}>
                   <td className="num">{idx + 1}</td>
                   <td>{li.itemName}</td>
+                  <td>{li.workId || ''}</td>
                   <td>{li.description || ''}</td>
                   <td className="num">{_num(li.qtyOnHand)}</td>
                   <td className="num">{_num(li.qtyIssue)}</td>
@@ -372,7 +374,7 @@ const SampleIssuePage: React.FC = () => {
 
       setFormData({
         docNumber: '',
-        projectNumber: projectDetails.ProjectId,
+        projectId: projectDetails.ProjectId,
         customerName: projectDetails.CustomerName === null ? null : projectDetails.CustomerName,
         salesperson: projectDetails.SalesPerson === null ? null : projectDetails.SalesPerson,
         projectManager: projectDetails.ProjectManager === null ? null : projectDetails.ProjectManager,
@@ -407,7 +409,7 @@ const SampleIssuePage: React.FC = () => {
         : '';
       setFormData({
         docNumber: issue.doc_number,
-        projectNumber: issue.project_number,
+        projectId: issue.project_id,
         customerName: issue.customer_name ?? null,
         salesperson: issue.salesperson ?? null,
         projectManager: issue.project_manager ?? null,
@@ -420,6 +422,7 @@ const SampleIssuePage: React.FC = () => {
         lineItems: issue.line_items.map((li) => ({
           id: li.id,
           itemName: li.item_name,
+          workId: li.work_id || '',
           description: li.description || '',
           qtyOnHand: li.qty_on_hand,
           qtyIssue: li.qty_issue,
@@ -486,6 +489,7 @@ const SampleIssuePage: React.FC = () => {
     const newItem: SampleLineItem = {
       id: Date.now().toString(),
       itemName: '',
+      workId: '',
       description: '',
       qtyOnHand: 0,
       qtyIssue: ''
@@ -521,7 +525,7 @@ const SampleIssuePage: React.FC = () => {
         ...prev,
         lineItems: prev.lineItems.map(lineItem =>
           lineItem.id === id
-            ? { ...lineItem, itemName: '', description: '', qtyOnHand: 0 }
+            ? { ...lineItem, itemName: '', workId: '', description: '', qtyOnHand: 0 }
             : lineItem
         )
       }));
@@ -547,7 +551,7 @@ const SampleIssuePage: React.FC = () => {
   };
 
   const _validateIssue = () => {
-    if (!formData.projectNumber || !formData.dispositionType || formData.lineItems.length === 0) {
+    if (!formData.projectId || !formData.dispositionType || formData.lineItems.length === 0) {
       toast.warning('Select a project, choose disposition type, and add at least one line item.');
       return false;
     }
@@ -558,6 +562,11 @@ const SampleIssuePage: React.FC = () => {
 
       if (!li.itemName) {
         toast.warning(`Row ${row}: select an item.`);
+        return false;
+      }
+
+      if (!(li.workId || '').trim()) {
+        toast.warning(`Row ${row} (${li.itemName}): enter Work ID.`);
         return false;
       }
 
@@ -589,7 +598,7 @@ const SampleIssuePage: React.FC = () => {
     setIsSaving(true);
     try {
       const payload = {
-        project_number: formData.projectNumber,
+        project_id: formData.projectId,
         customer_name: formData.customerName,
         salesperson: formData.salesperson,
         project_manager: formData.projectManager,
@@ -602,6 +611,7 @@ const SampleIssuePage: React.FC = () => {
         status,
         line_items: formData.lineItems.map((li) => ({
           item_name: li.itemName,
+          work_id: li.workId.trim(),
           description: li.description || null,
           qty_on_hand: Number(li.qtyOnHand || 0),
           qty_issue: li.qtyIssue === '' ? 0 : Number(li.qtyIssue),
@@ -617,6 +627,7 @@ const SampleIssuePage: React.FC = () => {
         lineItems: saved.line_items.map((li) => ({
           id: li.id,
           itemName: li.item_name,
+          workId: li.work_id || '',
           description: li.description || '',
           qtyOnHand: li.qty_on_hand,
           qtyIssue: li.qty_issue,
@@ -745,7 +756,7 @@ const SampleIssuePage: React.FC = () => {
                   <thead>
                     <tr>
                       <th>Doc #</th>
-                      <th>Project</th>
+                      <th>Project ID</th>
                       <th>Customer</th>
                       <th>Date</th>
                       <th>Status</th>
@@ -759,7 +770,7 @@ const SampleIssuePage: React.FC = () => {
                     {issuedIssues.map((iss) => (
                       <tr key={iss.id}>
                         <td>{iss.doc_number}</td>
-                        <td>{iss.project_number}</td>
+                        <td>{iss.project_id}</td>
                         <td>{iss.customer_name || ''}</td>
                         <td>{String(iss.date_of_issue || '').slice(0, 10)}</td>
                         <td>{iss.status || ''}</td>
@@ -898,6 +909,16 @@ const SampleIssuePage: React.FC = () => {
                 Project Information <span className="section-subtitle">(Filled using SELECTED project ID)</span>
               </h3>
               <div className="project-info-grid">
+                <div className="form-group project-id-highlight">
+                  <label className="project-id-label">Project ID</label>
+                  <input
+                    type="text"
+                    value={formData.projectId === null ? '' : formData.projectId}
+                    disabled
+                    className="input-field input-disabled project-id-input"
+                    placeholder={formData.projectId ? 'null' : 'Select a project to auto-fill'}
+                  />
+                </div>
                 <div className="form-group">
                   <label>Customer Name</label>
                   <input
@@ -905,7 +926,7 @@ const SampleIssuePage: React.FC = () => {
                     value={formData.customerName === null ? '' : formData.customerName}
                     disabled
                     className="input-field input-disabled"
-                    placeholder={formData.projectNumber ? 'null' : 'Select a project to auto-fill'}
+                    placeholder={formData.projectId ? 'null' : 'Select a project to auto-fill'}
                   />
                 </div>
 
@@ -916,7 +937,7 @@ const SampleIssuePage: React.FC = () => {
                     value={formData.salesperson === null ? '' : formData.salesperson}
                     disabled
                     className="input-field input-disabled"
-                    placeholder={formData.projectNumber ? 'null' : 'Select a project to auto-fill'}
+                    placeholder={formData.projectId ? 'null' : 'Select a project to auto-fill'}
                   />
                 </div>
 
@@ -927,7 +948,7 @@ const SampleIssuePage: React.FC = () => {
                     value={formData.projectManager === null ? '' : formData.projectManager}
                     disabled
                     className="input-field input-disabled"
-                    placeholder={formData.projectNumber ? 'null' : 'Select a project to auto-fill'}
+                    placeholder={formData.projectId ? 'null' : 'Select a project to auto-fill'}
                   />
                 </div>
 
@@ -938,7 +959,7 @@ const SampleIssuePage: React.FC = () => {
                     value={formData.businessUnit === null ? '' : formData.businessUnit}
                     disabled
                     className="input-field input-disabled"
-                    placeholder={formData.projectNumber ? 'null' : 'Select a project to auto-fill'}
+                    placeholder={formData.projectId ? 'null' : 'Select a project to auto-fill'}
                   />
                 </div>
 
@@ -949,7 +970,7 @@ const SampleIssuePage: React.FC = () => {
                     value={formData.subsidiary === null ? '' : formData.subsidiary}
                     disabled
                     className="input-field input-disabled"
-                    placeholder={formData.projectNumber ? 'null' : 'Select a project to auto-fill'}
+                    placeholder={formData.projectId ? 'null' : 'Select a project to auto-fill'}
                   />
                 </div>
               </div>
@@ -1003,6 +1024,7 @@ const SampleIssuePage: React.FC = () => {
                   <thead>
                     <tr>
                       <th>Item Name</th>
+                      <th>Work ID</th>
                       <th>Description</th>
                       <th>Qty On Hand</th>
                       <th>Qty Issue</th>
@@ -1012,7 +1034,7 @@ const SampleIssuePage: React.FC = () => {
                   <tbody>
                     {formData.lineItems.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="empty-state">
+                        <td colSpan={6} className="empty-state">
                           No items added. Click "Add Item" to begin.
                         </td>
                       </tr>
@@ -1036,6 +1058,16 @@ const SampleIssuePage: React.FC = () => {
                                   ))}
                               </select>
                             </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={item.workId}
+                              onChange={(e) => updateLineItem(item.id, 'workId', e.target.value)}
+                              className="table-input"
+                              placeholder="Work ID"
+                              disabled={isViewOnly}
+                            />
+                          </td>
                           <td>
                             <input
                               type="text"

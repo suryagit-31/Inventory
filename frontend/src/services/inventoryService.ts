@@ -5,6 +5,7 @@ export type InventoryAddOnCreatePayload = {
   location_store: string;
   line_items: Array<{
     item_name: string;
+    work_id: string;
     description?: string;
     quantity: number;
   }>;
@@ -22,6 +23,7 @@ export type InventoryAddOnResponse = {
     id: string;
     header_id: string;
     item_name: string;
+    work_id?: string | null;
     description?: string | null;
     quantity: number;
     created_at: string;
@@ -35,6 +37,7 @@ export type InventoryAddOnLineListItem = {
   date: string;
   location_store: string;
   item_name: string;
+  work_id?: string | null;
   description?: string | null;
   quantity: number;
   created_at: string;

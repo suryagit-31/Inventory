@@ -13,6 +13,7 @@ import './InventoryAddOnPagePrint.css';
 interface InventoryLineItem {
   id: string;
   itemName: string;
+  workId: string;
   description: string;
   quantity: number | '';
 }
@@ -84,6 +85,7 @@ function PrintableInventoryAddOnDoc({ recentLines }: PrintableInventoryAddOnDocP
               <th>Doc #</th>
               <th>Store</th>
               <th>Item Name</th>
+              <th>Work ID</th>
               <th>Description</th>
               <th style={{ width: '90px' }}>Qty</th>
               <th style={{ width: '110px' }}>Date</th>
@@ -92,7 +94,7 @@ function PrintableInventoryAddOnDoc({ recentLines }: PrintableInventoryAddOnDocP
           <tbody>
             {recentLines.length === 0 ? (
               <tr>
-                <td colSpan={6} className="empty">No recent add-ons found.</td>
+                <td colSpan={7} className="empty">No recent add-ons found.</td>
               </tr>
             ) : (
               recentLines.map((row) => (
@@ -100,6 +102,7 @@ function PrintableInventoryAddOnDoc({ recentLines }: PrintableInventoryAddOnDocP
                   <td>{row.doc_number}</td>
                   <td>{row.location_store}</td>
                   <td>{row.item_name}</td>
+                  <td>{row.work_id || ''}</td>
                   <td>{row.description || ''}</td>
                   <td className="num">{row.quantity}</td>
                   <td>{(row.date || '').slice(0, 10)}</td>
@@ -124,12 +127,14 @@ function mergeDuplicateLineItems(lineItems: InventoryLineItem[]) {
 
   const merged: InventoryLineItem[] = [];
   for (const li of lineItems) {
-    const key = normalizeItemKey(li.itemName);
-    if (!key) {
+    const itemKey = normalizeItemKey(li.itemName);
+    const workId = (li.workId || '').trim();
+    if (!itemKey || !workId) {
       merged.push({ ...li });
       continue;
     }
 
+    const key = `${itemKey}|${workId}`;
     const existingIndex = indexByKey.get(key);
     if (existingIndex === undefined) {
       indexByKey.set(key, merged.length);
@@ -328,6 +333,7 @@ const InventoryAddOnPage: React.FC = () => {
     const newItem: InventoryLineItem = {
       id: Date.now().toString(),
       itemName: '',
+      workId: '',
       description: '',
       quantity: ''
     };
@@ -454,9 +460,14 @@ const InventoryAddOnPage: React.FC = () => {
       const item = effectiveLineItems[i];
       const row = i + 1;
       const name = (item.itemName || '').trim();
+      const workId = (item.workId || '').trim();
 
       if (!name) {
         toast.warning(`Row ${row}: enter item name.`);
+        return;
+      }
+      if (!workId) {
+        toast.warning(`Row ${row} (${name}): enter Work ID.`);
         return;
       }
       if (item.quantity === '') {
@@ -479,6 +490,7 @@ const InventoryAddOnPage: React.FC = () => {
           location_store: formData.locationStore,
           line_items: effectiveLineItems.map((item) => ({
             item_name: item.itemName.trim(),
+            work_id: item.workId.trim(),
             description: item.description?.trim() || undefined,
             quantity: Number(item.quantity),
           })),
@@ -602,6 +614,7 @@ const InventoryAddOnPage: React.FC = () => {
               <thead>
                 <tr>
                   <th>Item Name</th>
+                  <th>Work ID</th>
                   <th>Description</th>
                   <th>Quantity</th>
                   <th>Action</th>
@@ -610,7 +623,7 @@ const InventoryAddOnPage: React.FC = () => {
               <tbody>
                 {formData.lineItems.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="empty-state">
+                    <td colSpan={5} className="empty-state">
                       No items added. Click "Add Item" to begin.
                     </td>
                   </tr>
@@ -667,6 +680,16 @@ const InventoryAddOnPage: React.FC = () => {
                             disabled={!selectedStore}
                           />
                         </div>
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={item.workId}
+                          onChange={(e) => updateLineItem(item.id, 'workId', e.target.value)}
+                          className="table-input"
+                          placeholder="Work ID"
+                          disabled={!selectedStore}
+                        />
                       </td>
                       <td>
                         <input
@@ -773,6 +796,7 @@ const InventoryAddOnPage: React.FC = () => {
                   <th>Doc #</th>
                   <th>Store</th>
                   <th>Item Name</th>
+                  <th>Work ID</th>
                   <th>Description</th>
                   <th>Qty</th>
                   <th>Date</th>
@@ -782,11 +806,11 @@ const InventoryAddOnPage: React.FC = () => {
               <tbody>
                 {isLoadingRecent ? (
                   <tr>
-                    <td colSpan={7} className="empty-state">Loading…</td>
+                    <td colSpan={8} className="empty-state">Loading…</td>
                   </tr>
                 ) : recentLines.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty-state">No recent add-ons found.</td>
+                    <td colSpan={8} className="empty-state">No recent add-ons found.</td>
                   </tr>
                 ) : (
                   recentLines.map((row) => (
@@ -794,6 +818,7 @@ const InventoryAddOnPage: React.FC = () => {
                       <td>{row.doc_number}</td>
                       <td>{row.location_store}</td>
                       <td>{row.item_name}</td>
+                      <td>{row.work_id || ''}</td>
                       <td>{row.description || ''}</td>
                       <td>{row.quantity}</td>
                       <td>{(row.date || '').slice(0, 10)}</td>
@@ -867,6 +892,7 @@ const InventoryAddOnPage: React.FC = () => {
                     <thead>
                       <tr>
                         <th>Item Name</th>
+                        <th>Work ID</th>
                         <th>Description</th>
                         <th style={{ width: 90 }}>Qty</th>
                       </tr>
@@ -875,6 +901,7 @@ const InventoryAddOnPage: React.FC = () => {
                       {viewAddOn.line_items.map((li) => (
                         <tr key={li.id}>
                           <td>{li.item_name}</td>
+                          <td>{li.work_id || ''}</td>
                           <td>{li.description || ''}</td>
                           <td>{li.quantity}</td>
                         </tr>

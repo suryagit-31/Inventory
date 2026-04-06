@@ -8,6 +8,7 @@ export type SampleReturnCreatePayload = {
   status?: string; // Draft | Returned
   line_items: Array<{
     item_name: string;
+    work_id: string;
     description?: string | null;
     qty_issued: number;
     qty_return: number;
@@ -29,6 +30,7 @@ export type SampleReturnResponse = {
     id: string;
     header_id: string;
     item_name: string;
+    work_id?: string | null;
     description?: string | null;
     qty_issued: number;
     qty_return: number;

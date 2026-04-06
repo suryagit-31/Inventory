@@ -1,7 +1,7 @@
 import { API_BASE_URL } from '../config/api';
 
 export type SampleIssueCreatePayload = {
-  project_number: string;
+  project_id: string;
   customer_name?: string | null;
   salesperson?: string | null;
   project_manager?: string | null;
@@ -13,6 +13,7 @@ export type SampleIssueCreatePayload = {
   status?: string;
   line_items: Array<{
     item_name: string;
+    work_id: string;
     description?: string | null;
     qty_on_hand: number;
     qty_issue: number;
@@ -22,7 +23,7 @@ export type SampleIssueCreatePayload = {
 export type SampleIssueResponse = {
   id: string;
   doc_number: string;
-  project_number: string;
+  project_id: string;
   customer_name?: string | null;
   salesperson?: string | null;
   project_manager?: string | null;
@@ -39,6 +40,7 @@ export type SampleIssueResponse = {
     id: string;
     header_id: string;
     item_name: string;
+    work_id?: string | null;
     description?: string | null;
     qty_on_hand: number;
     qty_issue: number;
@@ -73,13 +75,13 @@ export async function listSampleIssues(params?: {
   skip?: number;
   limit?: number;
   status_filter?: string;
-  project_number?: string;
+  project_id?: string;
 }): Promise<SampleIssueResponse[]> {
   const search = new URLSearchParams();
   search.set('skip', String(params?.skip ?? 0));
   search.set('limit', String(params?.limit ?? 100));
   if (params?.status_filter) search.set('status_filter', params.status_filter);
-  if (params?.project_number) search.set('project_number', params.project_number);
+  if (params?.project_id) search.set('project_id', params.project_id);
 
   const response = await fetch(`${API_BASE_URL}/api/sample-issues/?${search.toString()}`);
   if (!response.ok) {
@@ -113,6 +115,7 @@ export async function getSampleIssueByDocNumber(docNumber: string): Promise<Samp
 
 export type ReturnableLine = {
   item_name: string;
+  work_id: string;
   description?: string | null;
   qty_issued_total: number;
   qty_returned_total: number;

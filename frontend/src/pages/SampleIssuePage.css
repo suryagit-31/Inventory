@@ -279,6 +279,19 @@
   gap: 20px;
 }
 
+.project-id-highlight .project-id-label {
+  font-weight: 700;
+  color: #2f4770;
+}
+
+.project-id-highlight .project-id-input {
+  border: 2px solid #3b5274;
+  font-weight: 700;
+  color: #2f4770;
+  background-color: #fdfefe;
+  box-shadow: 0 0 0 2px rgba(59, 82, 116, 0.08);
+}
+
 /* Sample Details Section - User Input Fields */
 .sample-details-grid {
   display: grid;

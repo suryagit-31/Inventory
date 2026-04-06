@@ -14,6 +14,7 @@ import './SampleReturnPagePrint.css';
 interface SampleReturnLineItem {
   id: string;
   itemName: string;
+  workId: string;
   description: string;
   qtyIssued: number;
   qtyAlreadyReturned: number;
@@ -27,7 +28,7 @@ interface SampleReturnForm {
   docNumber: string;
   issueDocNumber: string;
   originalIssueId: string | null;
-  projectNumber: string | null;
+  projectId: string | null;
   customerName: string | null;
   issuedDate: string | null;
   issuedLocation: string | null;
@@ -42,11 +43,12 @@ interface SampleReturnForm {
 interface SampleIssueListItem {
   id: string;
   doc_number: string;
-  project_number: string;
+  project_id: string;
   customer_name: string | null;
   date_of_issue: string;
   status: string;
   business_unit: string | null;
+  disposition_type: string;
 }
 
 function _num(value: any): number {
@@ -120,7 +122,7 @@ function PrintableSampleReturnDoc({
         <div className="print-grid">
           <div><span className="k">Issue Doc #</span><span className="v">{formData.issueDocNumber || 'N/A'}</span></div>
           <div><span className="k">Issued Date</span><span className="v">{formData.issuedDate ? String(formData.issuedDate).slice(0, 10) : 'N/A'}</span></div>
-          <div><span className="k">Project #</span><span className="v">{formData.projectNumber || 'N/A'}</span></div>
+          <div><span className="k">Project ID</span><span className="v">{formData.projectId || 'N/A'}</span></div>
           <div><span className="k">Customer</span><span className="v">{formData.customerName || 'N/A'}</span></div>
         </div>
       </div>
@@ -142,6 +144,7 @@ function PrintableSampleReturnDoc({
             <tr>
               <th style={{ width: '40px' }}>#</th>
               <th>Item</th>
+              <th>Work ID</th>
               <th>Description</th>
               <th style={{ width: '90px' }}>Issued</th>
               <th style={{ width: '90px' }}>Return</th>
@@ -154,6 +157,7 @@ function PrintableSampleReturnDoc({
               <tr key={li.id}>
                 <td>{idx + 1}</td>
                 <td>{li.itemName}</td>
+                <td>{li.workId}</td>
                 <td>{li.description || ''}</td>
                 <td className="num">{_num(li.qtyIssued)}</td>
                 <td className="num">{_num(li.qtyReturn === '' ? 0 : li.qtyReturn)}</td>
@@ -254,7 +258,7 @@ function PrintableSampleReturnListDoc({
                   <tr key={issue.id}>
                     <td className="num">{idx + 1}</td>
                     <td>{issue.doc_number || 'N/A'}</td>
-                    <td>{issue.project_number || 'N/A'}</td>
+                    <td>{issue.project_id || 'N/A'}</td>
                     <td>{issue.customer_name || 'N/A'}</td>
                     <td>{issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : 'N/A'}</td>
                     <td>{issue.business_unit || 'N/A'}</td>
@@ -361,7 +365,7 @@ const SampleReturnPage: React.FC = () => {
     docNumber: '',
     issueDocNumber: issueDocNumber || '',
     originalIssueId: null,
-    projectNumber: null,
+    projectId: null,
     customerName: null,
     issuedDate: null,
     issuedLocation: null,
@@ -431,7 +435,7 @@ const SampleReturnPage: React.FC = () => {
           });
 
           if (debouncedSearchQuery.trim()) {
-            params.set('project_number', debouncedSearchQuery.trim());
+            params.set('project_id', debouncedSearchQuery.trim());
           }
 
           const url = `${API_BASE_URL}/api/sample-issues/?${params.toString()}`;
@@ -442,7 +446,10 @@ const SampleReturnPage: React.FC = () => {
           }
 
           const data = await response.json();
-          setIssuedSamples(data);
+          const filtered = data.filter((issue: SampleIssueListItem) =>
+            (issue.disposition_type || '').trim() !== 'Issued out for Rework'
+          );
+          setIssuedSamples(filtered);
           setIssuesHasMore(data.length === issuesPerPage);
         } catch (error) {
           console.error('Failed to load issued samples:', error);
@@ -494,11 +501,17 @@ const SampleReturnPage: React.FC = () => {
           }
 
           const issue = await response.json();
+          if ((issue.disposition_type || '').trim() === 'Issued out for Rework') {
+            toast.warning('This issue was sent out for rework and cannot be returned.');
+            navigate('/sample-return');
+            return;
+          }
 
           const returnable: ReturnableLine[] = await getIssueReturnable(issue.id);
           const returnLineItems: SampleReturnLineItem[] = returnable.map((row) => ({
-            id: `${issue.id}:${row.item_name}`,
+            id: `${issue.id}:${row.item_name}:${row.work_id}`,
             itemName: row.item_name,
+            workId: row.work_id,
             description: row.description || '',
             qtyIssued: row.qty_issued_total,
             qtyAlreadyReturned: row.qty_returned_total,
@@ -512,7 +525,7 @@ const SampleReturnPage: React.FC = () => {
             docNumber: '',
             issueDocNumber: issue.doc_number,
             originalIssueId: issue.id,
-            projectNumber: issue.project_number,
+            projectId: issue.project_id,
             customerName: issue.customer_name,
             issuedDate: issue.date_of_issue || null,
             issuedLocation: issue.location_stored || null,
@@ -635,6 +648,7 @@ const SampleReturnPage: React.FC = () => {
                 <thead>
                   <tr>
                     <th>Item</th>
+                    <th>Work ID</th>
                     <th>Description</th>
                     <th style={{ width: 110 }}>Issued</th>
                     <th style={{ width: 110 }}>Return</th>
@@ -644,6 +658,7 @@ const SampleReturnPage: React.FC = () => {
                   {viewReturn.line_items.map((li) => (
                     <tr key={li.id}>
                       <td>{li.item_name}</td>
+                      <td>{li.work_id || ''}</td>
                       <td>{li.description || ''}</td>
                       <td>{li.qty_issued}</td>
                       <td>{li.qty_return}</td>
@@ -749,6 +764,7 @@ const SampleReturnPage: React.FC = () => {
         .filter((li) => li.qtyReturn !== '' && Number(li.qtyReturn) > 0)
         .map((li) => ({
           item_name: li.itemName,
+          work_id: li.workId,
           description: li.description || null,
           qty_issued: li.qtyIssued,
           qty_return: Number(li.qtyReturn),
@@ -783,6 +799,7 @@ const SampleReturnPage: React.FC = () => {
         .filter((li) => li.qtyReturn !== '' && Number(li.qtyReturn) > 0)
         .map((li) => ({
           item_name: li.itemName,
+          work_id: li.workId,
           description: li.description || null,
           qty_issued: li.qtyIssued,
           qty_return: Number(li.qtyReturn),
@@ -1012,7 +1029,7 @@ const SampleReturnPage: React.FC = () => {
                         issuedSamples.map((issue) => (
                           <tr key={issue.id}>
                             <td className="project-id-cell">{issue.doc_number || 'N/A'}</td>
-                            <td>{issue.project_number || 'N/A'}</td>
+                            <td>{issue.project_id || 'N/A'}</td>
                             <td>{issue.customer_name || 'N/A'}</td>
                             <td>{issue.date_of_issue ? String(issue.date_of_issue).slice(0, 10) : 'N/A'}</td>
                             <td>{issue.status || 'N/A'}</td>
@@ -1229,10 +1246,10 @@ const SampleReturnPage: React.FC = () => {
             </div>
 
             <div className="form-group">
-              <label>Project Number</label>
+              <label>Project ID</label>
               <input
                 type="text"
-                value={formData.projectNumber === null ? '' : formData.projectNumber}
+                value={formData.projectId === null ? '' : formData.projectId}
                 disabled
                 className="input-field input-disabled"
                 placeholder={formData.issueDocNumber ? 'null' : 'Search issue document first'}
@@ -1306,6 +1323,7 @@ const SampleReturnPage: React.FC = () => {
               <thead>
                 <tr>
                   <th>Item Name</th>
+                  <th>Work ID</th>
                   <th>Description</th>
                   <th>Qty Issued</th>
                   <th>Already Returned</th>
@@ -1318,7 +1336,7 @@ const SampleReturnPage: React.FC = () => {
               <tbody>
                 {formData.lineItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="empty-state">
+                    <td colSpan={9} className="empty-state">
                       Search and select an issue document to load items.
                     </td>
                   </tr>
@@ -1326,6 +1344,7 @@ const SampleReturnPage: React.FC = () => {
                   formData.lineItems.map((item) => (
                     <tr key={item.id}>
                       <td>{item.itemName}</td>
+                      <td>{item.workId}</td>
                       <td>{item.description}</td>
                       <td>{item.qtyIssued}</td>
                       <td>{item.qtyAlreadyReturned}</td>
