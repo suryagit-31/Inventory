@@ -36,7 +36,7 @@
 | **Subsidiary** | Text | Manual entry | Optional |
 | **Location Stored** | Dropdown | Dubai / UAQ | Optional |
 | **Status** | Text | Auto (Draft/Issued/Returned/Closed) | Read-only |
-| **Disposition Type** | Dropdown | 4 options | ✅ Yes |
+| **Disposition Type** | Dropdown | 5 options | ✅ Yes |
 
 ### Line Items Section (Dynamic Rows)
 
@@ -143,11 +143,12 @@ Sample B-150  → Waterproofing membrane (Qty: 75)
 - Sample Store Dubai
 - Main Store UAQ
 
-### Disposition Types (4)
+### Disposition Types (5)
 - Scrapping
 - Used in Main Project
 - Missing
 - Issued to Customer
+- Issued out for Rework
 
 ---
 
@@ -173,7 +174,7 @@ Sample B-150  → Waterproofing membrane (Qty: 75)
 ```typescript
 {
   docNumber: string;           // Auto-generated
-  projectNumber: string;       // Required
+  projectId: string;           // Required
   customerName: string;        // Auto-fetched
   salesperson: string;         // Auto-fetched
   projectManager: string;      // Auto-fetched

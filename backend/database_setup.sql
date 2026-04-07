@@ -23,7 +23,7 @@ IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ErpSampleTrackerProjects')
 BEGIN
     CREATE TABLE dbo.ErpSampleTrackerProjects (
         id NVARCHAR(50) PRIMARY KEY,
-        project_number NVARCHAR(50) UNIQUE NOT NULL,
+        project_id NVARCHAR(50) UNIQUE NOT NULL,
         customer_name NVARCHAR(200) NOT NULL,
         salesperson NVARCHAR(100) NOT NULL,
         project_manager NVARCHAR(100) NOT NULL,
@@ -31,7 +31,7 @@ BEGIN
         created_at DATETIME DEFAULT GETDATE(),
         updated_at DATETIME DEFAULT GETDATE()
     );
-    CREATE INDEX idx_ErpSampleTrackerProjects_project_number ON dbo.ErpSampleTrackerProjects(project_number);
+    CREATE INDEX idx_ErpSampleTrackerProjects_project_id ON dbo.ErpSampleTrackerProjects(project_id);
     PRINT 'Table ErpSampleTrackerProjects created successfully.';
 END
 GO
@@ -111,7 +111,7 @@ BEGIN
     CREATE TABLE dbo.ErpSampleTrackerSampleIssues (
         id NVARCHAR(50) PRIMARY KEY,
         doc_number NVARCHAR(50) UNIQUE NOT NULL,
-        project_number NVARCHAR(50) NOT NULL,
+        project_id NVARCHAR(50) NOT NULL,
         customer_name NVARCHAR(200),
         salesperson NVARCHAR(100),
         project_manager NVARCHAR(100),
@@ -126,7 +126,7 @@ BEGIN
         updated_at DATETIME DEFAULT GETDATE()
     );
     CREATE INDEX idx_ErpSampleTrackerSampleIssues_doc_number ON dbo.ErpSampleTrackerSampleIssues(doc_number);
-    CREATE INDEX idx_ErpSampleTrackerSampleIssues_project_number ON dbo.ErpSampleTrackerSampleIssues(project_number);
+    CREATE INDEX idx_ErpSampleTrackerSampleIssues_project_id ON dbo.ErpSampleTrackerSampleIssues(project_id);
     CREATE INDEX idx_ErpSampleTrackerSampleIssues_status ON dbo.ErpSampleTrackerSampleIssues(status);
     PRINT 'Table ErpSampleTrackerSampleIssues created successfully.';
 END
@@ -141,6 +141,7 @@ BEGIN
         id NVARCHAR(50) PRIMARY KEY,
         header_id NVARCHAR(50) NOT NULL,
         item_name NVARCHAR(100) NOT NULL,
+        work_id NVARCHAR(50) NOT NULL,
         description NVARCHAR(500),
         qty_on_hand FLOAT NOT NULL,
         qty_issue FLOAT NOT NULL,
@@ -180,6 +181,7 @@ BEGIN
         id NVARCHAR(50) PRIMARY KEY,
         header_id NVARCHAR(50) NOT NULL,
         item_name NVARCHAR(100) NOT NULL,
+        work_id NVARCHAR(50) NOT NULL,
         description NVARCHAR(500),
         quantity INT NOT NULL,
         created_at DATETIME DEFAULT GETDATE(),
@@ -222,6 +224,7 @@ BEGIN
         id NVARCHAR(50) PRIMARY KEY,
         header_id NVARCHAR(50) NOT NULL,
         item_name NVARCHAR(100) NOT NULL,
+        work_id NVARCHAR(50) NOT NULL,
         description NVARCHAR(500),
         qty_issued FLOAT NOT NULL,
         qty_return FLOAT NOT NULL,

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -53,12 +53,21 @@ class InventoryLineItemBase(BaseModel):
 
 
 class InventoryLineItemCreate(InventoryLineItemBase):
-    pass
+    work_id: str = Field(..., max_length=50)
+
+    @field_validator("work_id")
+    @classmethod
+    def validate_work_id(cls, v):
+        work_id = (v or "").strip()
+        if not work_id:
+            raise ValueError("Work ID is required")
+        return work_id
 
 
 class InventoryLineItemResponse(InventoryLineItemBase):
     id: str
     header_id: str
+    work_id: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -95,6 +104,7 @@ class InventoryAddOnLineListItem(BaseModel):
     date: datetime
     location_store: str
     item_name: str
+    work_id: Optional[str] = None
     description: Optional[str] = None
     quantity: int
     created_at: datetime

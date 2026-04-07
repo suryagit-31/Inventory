@@ -37,14 +37,14 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     return project
 
 
-@router.get("/number/{project_number}", response_model=ProjectResponse)
-def get_project_by_number(project_number: str, db: Session = Depends(get_db)):
-    """Get a specific project by project number"""
-    project = db.query(Project).filter(Project.project_number == project_number).first()
+@router.get("/id/{project_id}", response_model=ProjectResponse)
+def get_project_by_id(project_id: str, db: Session = Depends(get_db)):
+    """Get a specific project by project ID"""
+    project = db.query(Project).filter(Project.project_id == project_id).first()
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project with number {project_number} not found"
+            detail=f"Project with ID {project_id} not found"
         )
     return project
 
@@ -53,11 +53,11 @@ def get_project_by_number(project_number: str, db: Session = Depends(get_db)):
 def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     """Create a new project"""
     # Check if project number already exists
-    existing = db.query(Project).filter(Project.project_number == project.project_number).first()
+    existing = db.query(Project).filter(Project.project_id == project.project_id).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Project with number {project.project_number} already exists"
+            detail=f"Project with ID {project.project_id} already exists"
         )
 
     db_project = Project(

@@ -20,13 +20,22 @@ class SampleReturnLineBase(BaseModel):
 
 
 class SampleReturnLineCreate(SampleReturnLineBase):
-    pass
+    work_id: str = Field(..., max_length=50)
+
+    @field_validator("work_id")
+    @classmethod
+    def validate_work_id(cls, v):
+        work_id = (v or "").strip()
+        if not work_id:
+            raise ValueError("Work ID is required")
+        return work_id
 
 
 class SampleReturnLineResponse(SampleReturnLineBase):
     id: str
     header_id: str
-    created_at: datetime
+    work_id: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -58,8 +67,8 @@ class SampleReturnResponse(SampleReturnBase):
     doc_number: str
     status: str
     created_by: Optional[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     line_items: List[SampleReturnLineResponse]
 
     class Config:

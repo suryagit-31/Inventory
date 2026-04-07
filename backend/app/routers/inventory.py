@@ -87,6 +87,7 @@ def get_recent_inventory_addon_lines(
             date=header.date,
             location_store=header.location_store,
             item_name=line.item_name,
+            work_id=line.work_id,
             description=line.description,
             quantity=int(line.quantity),
             created_at=line.created_at,
@@ -107,6 +108,7 @@ def get_recent_inventory_addon_lines_xlsx(
             "doc_number": li.doc_number,
             "location_store": li.location_store,
             "item_name": li.item_name,
+            "work_id": li.work_id,
             "description": li.description,
             "quantity": li.quantity,
             "date": (li.date.isoformat() if hasattr(li.date, "isoformat") else str(li.date))[:10],
@@ -119,11 +121,12 @@ def get_recent_inventory_addon_lines_xlsx(
         filters={"skip": skip, "limit": limit},
         summary={"rows": len(rows)},
         rows=rows,
-        column_order=["doc_number", "location_store", "item_name", "description", "quantity", "date"],
+        column_order=["doc_number", "location_store", "item_name", "work_id", "description", "quantity", "date"],
         column_titles={
             "doc_number": "Doc #",
             "location_store": "Store",
             "item_name": "Item",
+            "work_id": "Work ID",
             "description": "Description",
             "quantity": "Qty",
             "date": "Date",
@@ -163,7 +166,7 @@ def create_inventory_addon(addon: InventoryAddOnCreate, db: Session = Depends(ge
         )
         db.add(db_addon)
 
-        # Merge duplicate item lines by normalized key (case+space fold).
+        # Merge duplicate item lines by (normalized item key, work_id).
         merged: dict[str, dict] = {}
         for line_item in addon.line_items:
             display = (line_item.item_name or "").strip()
@@ -171,11 +174,17 @@ def create_inventory_addon(addon: InventoryAddOnCreate, db: Session = Depends(ge
             if not key:
                 raise HTTPException(status_code=400, detail="Item name cannot be empty")
 
-            entry = merged.get(key)
+            work_id = (line_item.work_id or "").strip()
+            if not work_id:
+                raise HTTPException(status_code=400, detail="Work ID is required")
+
+            merge_key = f"{key}|{work_id}"
+            entry = merged.get(merge_key)
             if entry is None:
-                merged[key] = {
+                merged[merge_key] = {
                     "item_name_key": key,
                     "display_name": display,
+                    "work_id": work_id,
                     "description": (line_item.description or "").strip() or None,
                     "quantity": int(line_item.quantity),
                 }
@@ -235,6 +244,7 @@ def create_inventory_addon(addon: InventoryAddOnCreate, db: Session = Depends(ge
                 id=str(uuid4()),
                 header_id=addon_id,
                 item_name=line_item_name,
+                work_id=entry["work_id"],
                 description=line_item_desc,
                 quantity=int(entry["quantity"]),
             )

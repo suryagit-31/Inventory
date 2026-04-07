@@ -189,6 +189,7 @@ curl http://localhost:8000/api/items/
 - Cannot issue more than available
 - Cannot return more than issued
 - Status flow enforcement
+- Disposition type validation (Scrapping, Used in Main Project, Missing, Issued to Customer, Issued out for Rework)
 
 ### 4. Business Logic
 - Sample Issue: Reduces inventory when status = "Issued"

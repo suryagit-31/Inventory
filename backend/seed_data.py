@@ -16,7 +16,7 @@ def seed_projects(db):
     projects = [
         {
             "id": str(uuid4()),
-            "project_number": "PRJ-2026-001",
+            "project_id": "PRJ-2026-001",
             "customer_name": "ABC Construction LLC",
             "salesperson": "John Smith",
             "project_manager": "Sarah Johnson",
@@ -24,7 +24,7 @@ def seed_projects(db):
         },
         {
             "id": str(uuid4()),
-            "project_number": "PRJ-2026-002",
+            "project_id": "PRJ-2026-002",
             "customer_name": "XYZ Development Corp",
             "salesperson": "Mike Brown",
             "project_manager": "Emily Davis",
@@ -32,7 +32,7 @@ def seed_projects(db):
         },
         {
             "id": str(uuid4()),
-            "project_number": "PRJ-2026-003",
+            "project_id": "PRJ-2026-003",
             "customer_name": "Gulf Engineering Solutions",
             "salesperson": "Ahmed Al-Farsi",
             "project_manager": "Mohammed Hassan",
@@ -43,14 +43,14 @@ def seed_projects(db):
     for project_data in projects:
         # Check if project already exists
         existing = db.query(Project).filter(
-            Project.project_number == project_data["project_number"]
+            Project.project_id == project_data["project_id"]
         ).first()
         if not existing:
             project = Project(**project_data)
             db.add(project)
-            print(f"✓ Created project: {project_data['project_number']}")
+            print(f"✓ Created project: {project_data['project_id']}")
         else:
-            print(f"- Project already exists: {project_data['project_number']}")
+            print(f"- Project already exists: {project_data['project_id']}")
 
     db.commit()
 

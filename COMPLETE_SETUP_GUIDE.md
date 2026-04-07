@@ -179,7 +179,7 @@ backend/item_name_key_upgrade.sql
 ### Projects (`/api/projects`)
 - `GET /api/projects/` - List all
 - `GET /api/projects/{id}` - Get by ID
-- `GET /api/projects/number/{project_number}` - Get by number
+- `GET /api/projects/id/{project_id}` - Get by ID
 - `POST /api/projects/` - Create new
 
 ### Items (`/api/items`)
@@ -239,7 +239,7 @@ backend/item_name_key_upgrade.sql
    - Cannot issue more than available
    - Cannot return more than issued
    - Status flow enforcement (Draft → Issued → Returned → Closed)
-   - Disposition type validation
+   - Disposition type validation (Scrapping, Used in Main Project, Missing, Issued to Customer, Issued out for Rework)
 
 5. **Database**
    - SQLAlchemy ORM with relationships

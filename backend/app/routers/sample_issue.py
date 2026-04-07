@@ -25,6 +25,7 @@ from app.utils.report_xlsx import build_workbook
 router = APIRouter(prefix="/api/sample-issues", tags=["Sample Issues"])
 
 _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_LEGACY_WORK_ID = "LEGACY"
 
 def _today_suffix() -> str:
     return date.today().isoformat()
@@ -115,7 +116,7 @@ def get_all_sample_issues(
     skip: int = 0,
     limit: int = 100,
     status_filter: Optional[str] = None,
-    project_number: Optional[str] = None,
+    project_id: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get all sample issues with optional filters"""
@@ -129,8 +130,8 @@ def get_all_sample_issues(
                     query = query.filter(SampleIssue.status.in_(statuses))
             else:
                 query = query.filter(SampleIssue.status == raw)
-        if project_number:
-            query = query.filter(SampleIssue.project_number == project_number)
+        if project_id:
+            query = query.filter(SampleIssue.project_id == project_id)
         # MSSQL requires ORDER BY when using OFFSET/FETCH. Avoid OFFSET when skip=0.
         query = query.order_by(SampleIssue.created_at.desc())
         if skip:
@@ -150,7 +151,7 @@ def export_sample_issues_xlsx(
     skip: int = 0,
     limit: int = 100,
     status_filter: Optional[str] = None,
-    project_number: Optional[str] = None,
+    project_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -160,7 +161,7 @@ def export_sample_issues_xlsx(
         skip=skip,
         limit=limit,
         status_filter=status_filter,
-        project_number=project_number,
+        project_id=project_id,
         db=db,
     )
     now = datetime.now()
@@ -172,7 +173,7 @@ def export_sample_issues_xlsx(
         data.append(
             {
                 "doc_number": iss.doc_number,
-                "project_number": iss.project_number,
+                "project_id": iss.project_id,
                 "customer_name": iss.customer_name,
                 "date_of_issue": (dt.isoformat() if dt else None)[:10] if dt else None,
                 "status": iss.status,
@@ -185,12 +186,12 @@ def export_sample_issues_xlsx(
     xlsx_bytes = build_workbook(
         report_name="Latest Sample Issues",
         generated_at=now.isoformat(),
-        filters={"skip": skip, "limit": limit, "status_filter": status_filter, "project_number": project_number},
+        filters={"skip": skip, "limit": limit, "status_filter": status_filter, "project_id": project_id},
         summary={"rows": len(data)},
         rows=data,
         column_order=[
             "doc_number",
-            "project_number",
+            "project_id",
             "customer_name",
             "date_of_issue",
             "status",
@@ -200,7 +201,7 @@ def export_sample_issues_xlsx(
         ],
         column_titles={
             "doc_number": "Doc #",
-            "project_number": "Project",
+            "project_id": "Project ID",
             "customer_name": "Customer",
             "date_of_issue": "Date",
             "status": "Status",
@@ -256,26 +257,33 @@ def get_issue_returnable_quantities(issue_id: str, db: Session = Depends(get_db)
     if not issue:
         raise HTTPException(status_code=404, detail=f"Sample issue with id {issue_id} not found")
 
-    issued_by_item: dict[str, float] = defaultdict(float)
-    description_by_item: dict[str, str | None] = {}
+    issued_by_item_work: dict[tuple[str, str], float] = defaultdict(float)
+    description_by_item_work: dict[tuple[str, str], str | None] = {}
     for line in issue.line_items:
-        issued_by_item[line.item_name] += float(line.qty_issue or 0.0)
-        description_by_item.setdefault(line.item_name, line.description)
+        work_id = (line.work_id or "").strip() or _LEGACY_WORK_ID
+        key = (line.item_name, work_id)
+        issued_by_item_work[key] += float(line.qty_issue or 0.0)
+        description_by_item_work.setdefault(key, line.description)
 
     returned_rows = (
         db.query(
             SampleReturnLine.item_name,
+            SampleReturnLine.work_id,
             func.coalesce(func.sum(SampleReturnLine.qty_return), 0.0).label("qty_returned"),
         )
         .join(SampleReturn, SampleReturn.id == SampleReturnLine.header_id)
         .filter(SampleReturn.original_issue_id == issue_id)
         .filter(SampleReturn.status == "Returned")
-        .group_by(SampleReturnLine.item_name)
+        .group_by(SampleReturnLine.item_name, SampleReturnLine.work_id)
         .all()
     )
-    returned_by_item = {row.item_name: float(row.qty_returned or 0.0) for row in returned_rows}
+    returned_by_item_work = {
+        (row.item_name, ((row.work_id or "").strip() or _LEGACY_WORK_ID)): float(row.qty_returned or 0.0)
+        for row in returned_rows
+    }
 
-    inventory_items = db.query(Item).filter(Item.item_name.in_(list(issued_by_item.keys()))).all()
+    item_names = sorted({name for (name, _work_id) in issued_by_item_work.keys()})
+    inventory_items = db.query(Item).filter(Item.item_name.in_(item_names)).all()
     item_by_name = {it.item_name: it for it in inventory_items}
 
     location = (issue.location_stored or "").strip()
@@ -290,8 +298,8 @@ def get_issue_returnable_quantities(issue_id: str, db: Session = Depends(get_db)
         stock_by_item_id = {s.item_id: s for s in stocks}
 
     result: list[SampleIssueReturnableLine] = []
-    for item_name, issued_total in issued_by_item.items():
-        returned_total = float(returned_by_item.get(item_name, 0.0))
+    for (item_name, work_id), issued_total in issued_by_item_work.items():
+        returned_total = float(returned_by_item_work.get((item_name, work_id), 0.0))
         remaining = max(float(issued_total) - returned_total, 0.0)
         inv_item = item_by_name.get(item_name)
         inv_stock = stock_by_item_id.get(inv_item.id) if inv_item and location else None
@@ -301,7 +309,8 @@ def get_issue_returnable_quantities(issue_id: str, db: Session = Depends(get_db)
         result.append(
             SampleIssueReturnableLine(
                 item_name=item_name,
-                description=description_by_item.get(item_name),
+                work_id=work_id,
+                description=description_by_item_work.get((item_name, work_id)),
                 qty_issued_total=float(issued_total),
                 qty_returned_total=returned_total,
                 qty_remaining=remaining,
@@ -312,7 +321,7 @@ def get_issue_returnable_quantities(issue_id: str, db: Session = Depends(get_db)
         )
 
     # Sort so most-returnable items appear first.
-    result.sort(key=lambda r: (-r.qty_remaining, r.item_name))
+    result.sort(key=lambda r: (-r.qty_remaining, r.item_name, r.work_id))
     return result
 
 
@@ -424,6 +433,9 @@ def update_sample_issue(
 
             requested_by_item: dict[str, float] = defaultdict(float)
             for line_item in db_issue.line_items:
+                work_id = (line_item.work_id or "").strip()
+                if not work_id:
+                    raise HTTPException(status_code=400, detail="Work ID is required for all line items before issuing")
                 requested_by_item[line_item.item_name] += float(line_item.qty_issue)
 
             item_by_name: dict[str, Item] = {}

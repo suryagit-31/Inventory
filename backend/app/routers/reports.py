@@ -126,7 +126,7 @@ def get_inventory_report_xlsx(location: Optional[str] = None, db: Session = Depe
 @router.get("/customer-samples")
 def get_customer_sample_report(
     customer_name: Optional[str] = None,
-    project_number: Optional[str] = None,
+    project_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db)
@@ -139,8 +139,8 @@ def get_customer_sample_report(
 
     if customer_name:
         query = query.filter(SampleIssue.customer_name.like(f"%{customer_name}%"))
-    if project_number:
-        query = query.filter(SampleIssue.project_number == project_number)
+    if project_id:
+        query = query.filter(SampleIssue.project_id == project_id)
     if date_from:
         query = query.filter(SampleIssue.date_of_issue >= datetime.fromisoformat(date_from))
     if date_to:
@@ -177,10 +177,12 @@ def get_customer_sample_report(
         for item_name, issued_qty in issued_by_item.items():
             returned_qty = float(returned_totals.get((issue.id, item_name), 0.0))
             balance = max(float(issued_qty) - float(returned_qty), 0.0)
+            if balance <= 0:
+                continue
             report_data.append(
                 {
                     "customer": issue.customer_name,
-                    "project_number": issue.project_number,
+                    "project_id": issue.project_id,
                     "item_name": item_name,
                     "qty_issued": float(issued_qty),
                     "qty_returned": returned_qty,
@@ -195,7 +197,7 @@ def get_customer_sample_report(
         "generated_at": datetime.now().isoformat(),
         "filters": {
             "customer_name": customer_name,
-            "project_number": project_number,
+            "project_id": project_id,
             "date_from": date_from,
             "date_to": date_to,
         },
@@ -206,7 +208,7 @@ def get_customer_sample_report(
             "total_qty_returned": sum(float(item["qty_returned"] or 0.0) for item in report_data),
             "total_balance_with_customer": sum(float(item["balance_with_customer"] or 0.0) for item in report_data),
             "unique_customers": len(set(item["customer"] for item in report_data)),
-            "unique_projects": len(set(item["project_number"] for item in report_data)),
+            "unique_projects": len(set(item["project_id"] for item in report_data)),
         }
     }
 
@@ -247,12 +249,12 @@ def get_customer_sample_suggestions(
     if project_q and project_q.strip():
         needle = f"%{project_q.strip()}%"
         rows = (
-            db.query(SampleIssue.project_number)
-            .filter(SampleIssue.project_number.isnot(None))
-            .filter(SampleIssue.project_number != "")
-            .filter(SampleIssue.project_number.like(needle))
+            db.query(SampleIssue.project_id)
+            .filter(SampleIssue.project_id.isnot(None))
+            .filter(SampleIssue.project_id != "")
+            .filter(SampleIssue.project_id.like(needle))
             .distinct()
-            .order_by(SampleIssue.project_number.asc())
+            .order_by(SampleIssue.project_id.asc())
             .limit(limit)
             .all()
         )
@@ -264,14 +266,14 @@ def get_customer_sample_suggestions(
 @router.get("/customer-samples.xlsx")
 def get_customer_sample_report_xlsx(
     customer_name: Optional[str] = None,
-    project_number: Optional[str] = None,
+    project_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     report = get_customer_sample_report(
         customer_name=customer_name,
-        project_number=project_number,
+        project_id=project_id,
         date_from=date_from,
         date_to=date_to,
         db=db,
@@ -281,7 +283,7 @@ def get_customer_sample_report_xlsx(
         "customer-samples-report",
         column_order=[
             "customer",
-            "project_number",
+            "project_id",
             "item_name",
             "qty_issued",
             "qty_returned",
@@ -412,7 +414,7 @@ def get_item_tracking_report(
                 "location": loc,
                 "qty_on_hand_delta": float(qty or 0.0),
                 "qty_issued_delta": 0.0,
-                "project_number": None,
+                "project_id": None,
                 "customer_name": None,
                 "original_issue_doc_number": None,
             }
@@ -424,7 +426,7 @@ def get_item_tracking_report(
             SampleIssue.date_of_issue,
             SampleIssue.doc_number,
             SampleIssue.location_stored,
-            SampleIssue.project_number,
+            SampleIssue.project_id,
             SampleIssue.customer_name,
             SampleIssue.status,
             SampleIssueLine.qty_issue,
@@ -446,7 +448,7 @@ def get_item_tracking_report(
                 "status": st,
                 "qty_on_hand_delta": 0.0,
                 "qty_issued_delta": float(qty or 0.0),
-                "project_number": proj,
+                "project_id": proj,
                 "customer_name": cust,
                 "original_issue_doc_number": None,
             }
@@ -459,7 +461,7 @@ def get_item_tracking_report(
             SampleReturn.doc_number,
             SampleIssue.doc_number,
             SampleIssue.location_stored,
-            SampleIssue.project_number,
+            SampleIssue.project_id,
             SampleIssue.customer_name,
             SampleReturn.status,
             SampleReturnLine.qty_return,
@@ -482,7 +484,7 @@ def get_item_tracking_report(
                 "status": st,
                 "qty_on_hand_delta": 0.0,
                 "qty_issued_delta": -float(qty or 0.0),
-                "project_number": proj,
+                "project_id": proj,
                 "customer_name": cust,
                 "original_issue_doc_number": issue_doc,
             }
@@ -559,7 +561,7 @@ def get_item_tracking_report(
                 "qty_on_hand_after": float(running["qty_on_hand"]),
                 "qty_issued_after": float(running["qty_issued"]),
                 "qty_available_after": float(available),
-                "project_number": e.get("project_number"),
+                "project_id": e.get("project_id"),
                 "customer_name": e.get("customer_name"),
                 "original_issue_doc_number": e.get("original_issue_doc_number"),
             }
@@ -608,7 +610,7 @@ def get_item_tracking_report_xlsx(
             "event_type",
             "doc_number",
             "original_issue_doc_number",
-            "project_number",
+            "project_id",
             "customer_name",
             "location",
             "qty_on_hand_delta",
@@ -620,7 +622,7 @@ def get_item_tracking_report_xlsx(
         column_titles={
             "doc_number": "Doc #",
             "original_issue_doc_number": "Original Issue Doc #",
-            "project_number": "Project #",
+            "project_id": "Project ID",
             "customer_name": "Customer",
             "qty_on_hand_delta": "Qty On Hand Δ",
             "qty_issued_delta": "Qty Issued Δ",

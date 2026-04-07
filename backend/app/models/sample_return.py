@@ -29,6 +29,7 @@ class SampleReturnLine(AppBase):
     id = Column(String(50), primary_key=True, index=True)
     header_id = Column(String(50), ForeignKey("dbo.ErpSampleTrackerSampleReturns.id"), nullable=False)
     item_name = Column(String(100), nullable=False)
+    work_id = Column(String(50))
     description = Column(String(500))
     qty_issued = Column(Float, nullable=False)
     qty_return = Column(Float, nullable=False)

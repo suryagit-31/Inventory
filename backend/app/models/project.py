@@ -7,7 +7,7 @@ class Project(AppBase):
     __table_args__ = {"schema": "dbo"}
 
     id = Column(String(50), primary_key=True, index=True)
-    project_number = Column(String(50), unique=True, nullable=False, index=True)
+    project_id = Column(String(50), unique=True, nullable=False, index=True)
     customer_name = Column(String(200), nullable=False)
     salesperson = Column(String(100), nullable=False)
     project_manager = Column(String(100), nullable=False)

@@ -19,6 +19,7 @@ from app.utils.report_xlsx import build_workbook
 router = APIRouter(prefix="/api/sample-returns", tags=["Sample Returns"])
 
 _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_LEGACY_WORK_ID = "LEGACY"
 
 def _today_suffix() -> str:
     return date.today().isoformat()
@@ -231,56 +232,69 @@ def create_sample_return(sample_return: SampleReturnCreate, db: Session = Depend
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Can only create returns for issued samples (current status: {original_issue.status})"
             )
+        if (original_issue.disposition_type or "").strip() == "Issued out for Rework":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot create returns for issues with disposition type 'Issued out for Rework'",
+            )
 
         location = (original_issue.location_stored or "").strip()
         if sample_return.status == "Returned" and not location:
             raise HTTPException(status_code=400, detail="Original issue has no location_stored; cannot apply return to inventory")
 
-        # Compute issued quantities per item for the original issue (sum across lines).
-        issued_by_item: dict[str, float] = defaultdict(float)
+        # Compute issued quantities per (item_name, work_id) for the original issue (sum across lines).
+        issued_by_item_work: dict[tuple[str, str], float] = defaultdict(float)
         for issue_line in original_issue.line_items:
-            issued_by_item[issue_line.item_name] += float(issue_line.qty_issue)
+            work_id = (issue_line.work_id or "").strip() or _LEGACY_WORK_ID
+            issued_by_item_work[(issue_line.item_name, work_id)] += float(issue_line.qty_issue)
 
-        # Compute already-returned quantities per item for this original issue (only Returned returns).
+        # Compute already-returned quantities per (item_name, work_id) for this original issue (only Returned returns).
         returned_rows = (
             db.query(
                 SampleReturnLine.item_name,
+                SampleReturnLine.work_id,
                 func.coalesce(func.sum(SampleReturnLine.qty_return), 0.0).label("qty_returned"),
             )
             .join(SampleReturn, SampleReturn.id == SampleReturnLine.header_id)
             .filter(SampleReturn.original_issue_id == sample_return.original_issue_id)
             .filter(SampleReturn.status == "Returned")
-            .group_by(SampleReturnLine.item_name)
+            .group_by(SampleReturnLine.item_name, SampleReturnLine.work_id)
             .all()
         )
-        already_returned_by_item = {row.item_name: float(row.qty_returned or 0.0) for row in returned_rows}
+        already_returned_by_item_work = {
+            (row.item_name, ((row.work_id or "").strip() or _LEGACY_WORK_ID)): float(row.qty_returned or 0.0)
+            for row in returned_rows
+        }
 
-        # Sum requested returns per item (avoid bypass via duplicate lines).
-        requested_by_item: dict[str, float] = defaultdict(float)
+        # Sum requested returns per (item_name, work_id) (avoid bypass via duplicate lines).
+        requested_by_item_work: dict[tuple[str, str], float] = defaultdict(float)
         for line_item in sample_return.line_items:
-            requested_by_item[line_item.item_name] += float(line_item.qty_return)
+            work_id = (line_item.work_id or "").strip()
+            if not work_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Work ID is required")
+            requested_by_item_work[(line_item.item_name, work_id)] += float(line_item.qty_return)
 
-        # Validate each requested item exists on the original issue and has remaining quantity.
-        for item_name, requested_qty in requested_by_item.items():
-            issued_qty = issued_by_item.get(item_name)
+        # Validate each requested (item, work_id) exists on the original issue and has remaining quantity.
+        for (item_name, work_id), requested_qty in requested_by_item_work.items():
+            issued_qty = issued_by_item_work.get((item_name, work_id))
             if issued_qty is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Item {item_name} was not issued on the original document",
+                    detail=f"Item {item_name} with Work ID {work_id} was not issued on the original document",
                 )
 
-            already_returned = already_returned_by_item.get(item_name, 0.0)
+            already_returned = already_returned_by_item_work.get((item_name, work_id), 0.0)
             remaining = issued_qty - already_returned
             if remaining <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"No remaining quantity to return for item {item_name}",
+                    detail=f"No remaining quantity to return for item {item_name} with Work ID {work_id}",
                 )
             if requested_qty > remaining:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        f"Return quantity exceeds remaining for item {item_name}. "
+                        f"Return quantity exceeds remaining for item {item_name} (Work ID {work_id}). "
                         f"Issued: {issued_qty}, Already Returned: {already_returned}, "
                         f"Remaining: {remaining}, Requested: {requested_qty}"
                     ),
@@ -300,7 +314,10 @@ def create_sample_return(sample_return: SampleReturnCreate, db: Session = Depend
 
         # Create line items and update inventory
         for line_item in sample_return.line_items:
-            issued_qty = issued_by_item.get(line_item.item_name, 0.0)
+            work_id = (line_item.work_id or "").strip()
+            if not work_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Work ID is required")
+            issued_qty = issued_by_item_work.get((line_item.item_name, work_id), 0.0)
             payload = line_item.model_dump()
             payload["qty_issued"] = issued_qty
             db_line = SampleReturnLine(
@@ -330,9 +347,9 @@ def create_sample_return(sample_return: SampleReturnCreate, db: Session = Depend
 
         # Update original issue status if all items returned
         if sample_return.status == "Returned":
-            total_issued = sum(issued_by_item.values())
-            total_already_returned = sum(already_returned_by_item.values())
-            total_requested = sum(requested_by_item.values())
+            total_issued = sum(issued_by_item_work.values())
+            total_already_returned = sum(already_returned_by_item_work.values())
+            total_requested = sum(requested_by_item_work.values())
             total_after = total_already_returned + total_requested
             if total_after >= total_issued:
                 original_issue.status = "Returned"

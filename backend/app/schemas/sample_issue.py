@@ -12,6 +12,16 @@ class SampleLineItemBase(BaseModel):
 
 
 class SampleLineItemCreate(SampleLineItemBase):
+    work_id: str = Field(..., max_length=50)
+
+    @field_validator("work_id")
+    @classmethod
+    def validate_work_id(cls, v):
+        work_id = (v or "").strip()
+        if not work_id:
+            raise ValueError("Work ID is required")
+        return work_id
+
     @field_validator('qty_issue')
     @classmethod
     def validate_qty_issue(cls, v, info):
@@ -24,7 +34,8 @@ class SampleLineItemCreate(SampleLineItemBase):
 class SampleLineItemResponse(SampleLineItemBase):
     id: str
     header_id: str
-    created_at: datetime
+    work_id: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -32,7 +43,7 @@ class SampleLineItemResponse(SampleLineItemBase):
 
 # Sample Issue Header Schemas
 class SampleIssueBase(BaseModel):
-    project_number: str = Field(..., max_length=50)
+    project_id: str = Field(..., max_length=50)
     customer_name: Optional[str] = Field(None, max_length=200)
     salesperson: Optional[str] = Field(None, max_length=100)
     project_manager: Optional[str] = Field(None, max_length=100)
@@ -58,7 +69,13 @@ class SampleIssueCreate(SampleIssueBase):
     @field_validator('disposition_type')
     @classmethod
     def validate_disposition_type(cls, v):
-        allowed_types = ['Scrapping', 'Used in Main Project', 'Missing', 'Issued to Customer']
+        allowed_types = [
+            'Scrapping',
+            'Used in Main Project',
+            'Missing',
+            'Issued to Customer',
+            'Issued out for Rework',
+        ]
         if v not in allowed_types:
             raise ValueError(f'Disposition type must be one of: {", ".join(allowed_types)}')
         return v
@@ -84,8 +101,8 @@ class SampleIssueResponse(SampleIssueBase):
     doc_number: str
     status: str
     created_by: Optional[str]
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     line_items: List[SampleLineItemResponse]
 
     class Config:
@@ -94,6 +111,7 @@ class SampleIssueResponse(SampleIssueBase):
 
 class SampleIssueReturnableLine(BaseModel):
     item_name: str
+    work_id: str
     description: Optional[str] = None
     qty_issued_total: float
     qty_returned_total: float

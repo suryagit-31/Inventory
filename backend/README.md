@@ -172,7 +172,7 @@ Once running, access:
 ### Projects
 - `GET /api/projects/` - List all projects
 - `GET /api/projects/{id}` - Get project by ID
-- `GET /api/projects/number/{project_number}` - Get project by number
+- `GET /api/projects/id/{project_id}` - Get project by ID
 - `POST /api/projects/` - Create new project
 
 ### Items
@@ -251,7 +251,7 @@ The following tables will be created automatically:
 curl -X POST http://localhost:8000/api/projects/ \
   -H "Content-Type: application/json" \
   -d '{
-    "project_number": "PRJ-2026-001",
+    "project_id": "PRJ-2026-001",
     "customer_name": "ABC Construction LLC",
     "salesperson": "John Smith",
     "project_manager": "Sarah Johnson"
