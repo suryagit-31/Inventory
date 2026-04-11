@@ -34,7 +34,7 @@ class SampleIssueLine(AppBase):
     id = Column(String(50), primary_key=True, index=True)
     header_id = Column(String(50), ForeignKey("dbo.ErpSampleTrackerSampleIssues.id"), nullable=False)
     item_name = Column(String(100), nullable=False)
-    work_id = Column(String(50))
+    work_id = Column(String(50), nullable=False)
     description = Column(String(500))
     qty_on_hand = Column(Float, nullable=False)
     qty_issue = Column(Float, nullable=False)

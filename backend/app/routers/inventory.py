@@ -1,14 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from datetime import date, datetime
 from typing import List
 from uuid import uuid4
 
-from app.database import get_db
+from app.config import settings
+from app.database import get_db, get_erp_db
 from app.models.inventory import InventoryAddOn, InventoryAddOnLine, Item
 from app.models.item_stock import ItemStock
 from app.schemas.inventory import InventoryAddOnCreate, InventoryAddOnResponse, InventoryAddOnLineListItem
 from app.utils.doc_number import generate_doc_number
+from app.utils.erp_completed_samples_import import import_completed_sample_workorders
 from app.utils.normalize import normalize_item_name
 from app.utils.report_xlsx import build_workbook
 
@@ -257,6 +260,71 @@ def create_inventory_addon(addon: InventoryAddOnCreate, db: Session = Depends(ge
         db.rollback()
         raise
 
+
+@router.post("/import/erp-completed-samples/run")
+def run_erp_completed_samples_import(
+    db: Session = Depends(get_db),
+    erp_db: Session = Depends(get_erp_db),
+    x_import_token: str | None = Header(default=None, alias="X-Import-Token"),
+):
+    """
+    Import ERP "Completed Sample" workorders into Inventory Add-Ons.
+
+    Designed to be triggered by cron/systemd timer (no UI required).
+    If IMPORT_TOKEN is set, callers must supply X-Import-Token.
+    """
+    if (settings.IMPORT_TOKEN or "").strip():
+        if (x_import_token or "").strip() != (settings.IMPORT_TOKEN or "").strip():
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    lock_acquired = False
+    try:
+        # Optional single-run protection (works only if SQL Server allows sp_getapplock).
+        try:
+            lock_result = db.execute(
+                text(
+                    "DECLARE @r int; "
+                    "EXEC @r = sp_getapplock "
+                    "  @Resource=:resource, "
+                    "  @LockMode='Exclusive', "
+                    "  @LockOwner='Session', "
+                    "  @LockTimeout=0; "
+                    "SELECT @r AS r;"
+                ),
+                {"resource": "erp_completed_samples_import"},
+            ).scalar()
+            if lock_result is not None and int(lock_result) >= 0:
+                lock_acquired = True
+            elif lock_result is not None and int(lock_result) < 0:
+                raise HTTPException(status_code=409, detail="Import already running")
+        except HTTPException:
+            raise
+        except Exception:
+            # If not permitted / not supported, run without lock.
+            lock_acquired = False
+
+        summary = import_completed_sample_workorders(db, erp_db)
+        db.commit()
+        return summary.to_dict()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Import failed: {exc}")
+    finally:
+        if lock_acquired:
+            try:
+                db.execute(
+                    text(
+                        "EXEC sp_releaseapplock "
+                        "  @Resource=:resource, "
+                        "  @LockOwner='Session';"
+                    ),
+                    {"resource": "erp_completed_samples_import"},
+                )
+            except Exception:
+                pass
 
 @router.delete("/{addon_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_inventory_addon(addon_id: str, db: Session = Depends(get_db)):

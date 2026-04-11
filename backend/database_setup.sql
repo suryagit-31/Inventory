@@ -188,6 +188,7 @@ BEGIN
         FOREIGN KEY (header_id) REFERENCES dbo.ErpSampleTrackerInventoryAddOns(id) ON DELETE CASCADE
     );
     CREATE INDEX idx_ErpSampleTrackerInventoryAddOnLines_header_id ON dbo.ErpSampleTrackerInventoryAddOnLines(header_id);
+    CREATE UNIQUE INDEX uq_ErpSampleTrackerInventoryAddOnLines_work_id ON dbo.ErpSampleTrackerInventoryAddOnLines(work_id);
     PRINT 'Table ErpSampleTrackerInventoryAddOnLines created successfully.';
 END
 GO
@@ -203,6 +204,7 @@ BEGIN
         original_issue_id NVARCHAR(50) NOT NULL,
         date_of_return DATETIME NOT NULL,
         remarks NVARCHAR(500),
+        reason_for_return NVARCHAR(500),
         status NVARCHAR(20) DEFAULT 'Draft' NOT NULL,
         created_by NVARCHAR(100),
         created_at DATETIME DEFAULT GETDATE(),
@@ -228,6 +230,7 @@ BEGIN
         description NVARCHAR(500),
         qty_issued FLOAT NOT NULL,
         qty_return FLOAT NOT NULL,
+        condition NVARCHAR(20) NOT NULL CONSTRAINT DF_ErpSampleTrackerSampleReturnLines_condition DEFAULT 'Good',
         created_at DATETIME DEFAULT GETDATE(),
         FOREIGN KEY (header_id) REFERENCES dbo.ErpSampleTrackerSampleReturns(id) ON DELETE CASCADE
     );
@@ -290,6 +293,78 @@ BEGIN
     END
     ');
     PRINT 'Trigger trg_ErpSampleTrackerSampleIssues_updated_at created successfully.';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.triggers WHERE name = 'trg_ErpSampleTrackerItemStocks_updated_at')
+BEGIN
+    EXEC('
+    CREATE TRIGGER trg_ErpSampleTrackerItemStocks_updated_at
+    ON dbo.ErpSampleTrackerItemStocks
+    AFTER UPDATE
+    AS
+    BEGIN
+        UPDATE dbo.ErpSampleTrackerItemStocks
+        SET updated_at = GETDATE()
+        FROM dbo.ErpSampleTrackerItemStocks s
+        INNER JOIN inserted i ON s.id = i.id;
+    END
+    ');
+    PRINT 'Trigger trg_ErpSampleTrackerItemStocks_updated_at created successfully.';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.triggers WHERE name = 'trg_ErpSampleTrackerDocNumberSequences_updated_at')
+BEGIN
+    EXEC('
+    CREATE TRIGGER trg_ErpSampleTrackerDocNumberSequences_updated_at
+    ON dbo.ErpSampleTrackerDocNumberSequences
+    AFTER UPDATE
+    AS
+    BEGIN
+        UPDATE dbo.ErpSampleTrackerDocNumberSequences
+        SET updated_at = GETDATE()
+        FROM dbo.ErpSampleTrackerDocNumberSequences s
+        INNER JOIN inserted i ON s.id = i.id;
+    END
+    ');
+    PRINT 'Trigger trg_ErpSampleTrackerDocNumberSequences_updated_at created successfully.';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.triggers WHERE name = 'trg_ErpSampleTrackerInventoryAddOns_updated_at')
+BEGIN
+    EXEC('
+    CREATE TRIGGER trg_ErpSampleTrackerInventoryAddOns_updated_at
+    ON dbo.ErpSampleTrackerInventoryAddOns
+    AFTER UPDATE
+    AS
+    BEGIN
+        UPDATE dbo.ErpSampleTrackerInventoryAddOns
+        SET updated_at = GETDATE()
+        FROM dbo.ErpSampleTrackerInventoryAddOns s
+        INNER JOIN inserted i ON s.id = i.id;
+    END
+    ');
+    PRINT 'Trigger trg_ErpSampleTrackerInventoryAddOns_updated_at created successfully.';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.triggers WHERE name = 'trg_ErpSampleTrackerSampleReturns_updated_at')
+BEGIN
+    EXEC('
+    CREATE TRIGGER trg_ErpSampleTrackerSampleReturns_updated_at
+    ON dbo.ErpSampleTrackerSampleReturns
+    AFTER UPDATE
+    AS
+    BEGIN
+        UPDATE dbo.ErpSampleTrackerSampleReturns
+        SET updated_at = GETDATE()
+        FROM dbo.ErpSampleTrackerSampleReturns s
+        INNER JOIN inserted i ON s.id = i.id;
+    END
+    ');
+    PRINT 'Trigger trg_ErpSampleTrackerSampleReturns_updated_at created successfully.';
 END
 GO
 

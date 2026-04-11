@@ -12,6 +12,7 @@ export type SampleReturnCreatePayload = {
     description?: string | null;
     qty_issued: number;
     qty_return: number;
+    condition: string; // Good | Damaged | Lost
   }>;
 };
 
@@ -30,10 +31,11 @@ export type SampleReturnResponse = {
     id: string;
     header_id: string;
     item_name: string;
-    work_id?: string | null;
+    work_id: string;
     description?: string | null;
     qty_issued: number;
     qty_return: number;
+    condition: string;
     created_at: string;
   }>;
 };

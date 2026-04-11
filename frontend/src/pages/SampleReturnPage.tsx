@@ -734,6 +734,17 @@ const SampleReturnPage: React.FC = () => {
 
       // Allow blank / 0 as "no return" for partial returns.
       if (li.qtyReturn === '') continue;
+      if (_num(li.qtyReturn) === 0) continue;
+
+      const condition = (li.condition || '').trim();
+      if (!condition) {
+        toast.warning(`Row ${row} (${li.itemName}): Condition is required.`);
+        return false;
+      }
+      if (!['Good', 'Damaged', 'Lost'].includes(condition)) {
+        toast.warning(`Row ${row} (${li.itemName}): Condition must be Good, Damaged, or Lost.`);
+        return false;
+      }
 
       if (li.qtyReturn < 0) {
         toast.warning(`Row ${row} (${li.itemName}): Qty Return cannot be negative.`);
@@ -768,6 +779,7 @@ const SampleReturnPage: React.FC = () => {
           description: li.description || null,
           qty_issued: li.qtyIssued,
           qty_return: Number(li.qtyReturn),
+          condition: li.condition,
         }));
 
       if (lineItems.length === 0) {
@@ -803,6 +815,7 @@ const SampleReturnPage: React.FC = () => {
           description: li.description || null,
           qty_issued: li.qtyIssued,
           qty_return: Number(li.qtyReturn),
+          condition: li.condition,
         }));
 
       if (lineItems.length === 0) {

@@ -9,6 +9,7 @@ class SampleReturnLineBase(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     qty_issued: float = Field(..., gt=0)
     qty_return: float = Field(..., gt=0)
+    condition: str = Field(..., max_length=20)  # Good | Damaged | Lost
 
     @field_validator('qty_return')
     @classmethod
@@ -17,6 +18,15 @@ class SampleReturnLineBase(BaseModel):
         if qty_issued is not None and v > qty_issued:
             raise ValueError('Quantity to return cannot exceed quantity issued')
         return v
+
+    @field_validator("condition")
+    @classmethod
+    def validate_condition(cls, v):
+        value = (v or "").strip()
+        allowed = {"Good", "Damaged", "Lost"}
+        if value not in allowed:
+            raise ValueError("Condition must be one of: Good, Damaged, Lost")
+        return value
 
 
 class SampleReturnLineCreate(SampleReturnLineBase):

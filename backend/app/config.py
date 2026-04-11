@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # Scheduled import trigger protection (optional but recommended in production)
+    IMPORT_TOKEN: str = ""
+
     @property
     def app_database_url(self) -> str:
         """Generate SQLAlchemy database URL for the Sample Tracker DB."""
