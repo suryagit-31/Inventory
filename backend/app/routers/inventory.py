@@ -273,8 +273,9 @@ def run_erp_completed_samples_import(
     Designed to be triggered by cron/systemd timer (no UI required).
     If IMPORT_TOKEN is set, callers must supply X-Import-Token.
     """
-    if (settings.IMPORT_TOKEN or "").strip():
-        if (x_import_token or "").strip() != (settings.IMPORT_TOKEN or "").strip():
+    expected = (getattr(settings, "IMPORT_TOKEN", "") or "").strip()
+    if expected:
+        if (x_import_token or "").strip() != expected:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
     lock_acquired = False

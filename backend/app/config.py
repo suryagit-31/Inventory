@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AliasChoices, Field, field_validator
 from typing import List
 from pathlib import Path
@@ -8,6 +8,14 @@ _ENV_FILE = str((Path(__file__).resolve().parents[1] / ".env"))
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        # Always load the backend env file regardless of process working directory.
+        env_file=_ENV_FILE,
+        case_sensitive=True,
+        # Allow adding new env vars in production without crashing the app.
+        # (Unknown keys are ignored; known keys are still parsed.)
+        extra="ignore",
+    )
     # Sample Tracker database (app-owned tables)
     # If APP_* variables are not set, falls back to legacy DB_* variables.
     APP_DB_SERVER: str = ""
@@ -84,11 +92,6 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         """Convert comma-separated CORS origins to list"""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
-
-    class Config:
-        # Always load the backend env file regardless of process working directory.
-        env_file = _ENV_FILE
-        case_sensitive = True
 
     def safe_log_dict(self) -> dict:
         """

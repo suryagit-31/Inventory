@@ -14,6 +14,7 @@ from app.utils.normalize import normalize_item_name
 
 
 DEFAULT_ERP_IMPORT_LOCATION = "Sample Store Dubai"
+_IN_CLAUSE_CHUNK = 900  # keep under SQL Server parameter limits
 
 
 def _limit(value: Any, max_len: int) -> str | None:
@@ -123,11 +124,32 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
         return summary
 
     # Existing work IDs (workorder numbers) already imported.
-    existing_work_ids = {
-        r[0]
-        for r in app_db.query(InventoryAddOnLine.work_id).distinct().all()
-        if r and r[0]
-    }
+    # Important: only query for work IDs we are about to consider, to avoid scanning huge tables.
+    candidate_work_ids: list[str] = []
+    seen_candidates: set[str] = set()
+    for row in rows:
+        wid = _limit(row.get("workorderNumber"), 50)
+        if not wid or wid in seen_candidates:
+            continue
+        seen_candidates.add(wid)
+        candidate_work_ids.append(wid)
+
+    existing_work_ids: set[str] = set()
+    if candidate_work_ids:
+        for i in range(0, len(candidate_work_ids), _IN_CLAUSE_CHUNK):
+            chunk = candidate_work_ids[i : i + _IN_CLAUSE_CHUNK]
+            existing_work_ids.update(
+                [
+                    r[0]
+                    for r in (
+                        app_db.query(InventoryAddOnLine.work_id)
+                        .filter(InventoryAddOnLine.work_id.in_(chunk))
+                        .distinct()
+                        .all()
+                    )
+                    if r and r[0]
+                ]
+            )
 
     # Group by projectCode.
     grouped: dict[str, list[dict]] = {}
@@ -158,13 +180,23 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
             }
         )
 
+    # Small caches to reduce round-trips during big imports.
+    item_by_key: dict[str, Item] = {}
+    stock_by_item_location: dict[tuple[str, str], ItemStock] = {}
+    header_by_doc: dict[str, InventoryAddOn] = {}
+
     for project_code, items in grouped.items():
         project_bucket = summary.per_project.setdefault(
             project_code,
             {"imported": 0, "skipped_duplicates": 0, "skipped_wrong_location": 0, "skipped_missing_fields": 0},
         )
 
-        header = app_db.query(InventoryAddOn).filter(InventoryAddOn.doc_number == project_code).first()
+        header = header_by_doc.get(project_code)
+        if header is None:
+            header = app_db.query(InventoryAddOn).filter(InventoryAddOn.doc_number == project_code).first()
+            if header is not None:
+                header_by_doc[project_code] = header
+
         if header and (header.location_store or "").strip() != DEFAULT_ERP_IMPORT_LOCATION:
             summary.skipped_wrong_location += len(items)
             project_bucket["skipped_wrong_location"] += len(items)
@@ -214,7 +246,12 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
                 project_bucket["skipped_missing_fields"] += 1
                 continue
 
-            item = app_db.query(Item).filter(Item.item_name_key == key).first()
+            item = item_by_key.get(key)
+            if item is None:
+                item = app_db.query(Item).filter(Item.item_name_key == key).first()
+                if item is not None:
+                    item_by_key[key] = item
+
             if not item:
                 item = Item(
                     id=str(uuid4()),
@@ -228,13 +265,20 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
                 )
                 app_db.add(item)
                 app_db.flush()
+                item_by_key[key] = item
 
-            stock = (
-                app_db.query(ItemStock)
-                .filter(ItemStock.item_id == item.id)
-                .filter(ItemStock.location == DEFAULT_ERP_IMPORT_LOCATION)
-                .first()
-            )
+            stock_key = (item.id, DEFAULT_ERP_IMPORT_LOCATION)
+            stock = stock_by_item_location.get(stock_key)
+            if stock is None:
+                stock = (
+                    app_db.query(ItemStock)
+                    .filter(ItemStock.item_id == item.id)
+                    .filter(ItemStock.location == DEFAULT_ERP_IMPORT_LOCATION)
+                    .first()
+                )
+                if stock is not None:
+                    stock_by_item_location[stock_key] = stock
+
             if stock:
                 stock.qty_on_hand = float(stock.qty_on_hand or 0.0) + float(quantity)
                 stock.qty_issued = float(stock.qty_issued or 0.0)
@@ -250,6 +294,7 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
                     qty_issued=0.0,
                 )
                 app_db.add(stock)
+                stock_by_item_location[stock_key] = stock
 
             # Add inventory add-on line.
             if header is None:
@@ -261,6 +306,7 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
                 )
                 app_db.add(header)
                 app_db.flush()
+                header_by_doc[project_code] = header
 
             line = InventoryAddOnLine(
                 id=str(uuid4()),
