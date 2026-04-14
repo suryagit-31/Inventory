@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from app.models.inventory import InventoryAddOn, InventoryAddOnLine, Item
 from app.models.item_stock import ItemStock
+from app.utils.doc_number import generate_doc_number
 from app.utils.normalize import normalize_item_name
 
 
@@ -102,11 +103,11 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
     - De-dupe by workorderNumber -> InventoryAddOnLine.work_id (global).
 
     Mapping:
-    - InventoryAddOn.doc_number = projectCode
+    - InventoryAddOn.doc_number = generated via IA sequence
     - InventoryAddOn.location_store = DEFAULT_ERP_IMPORT_LOCATION
     - InventoryAddOn.date = max(completedon) among imported rows per project
     - InventoryAddOnLine.work_id = workorderNumber
-    - InventoryAddOnLine.item_name = projectName (truncated to 100)
+    - InventoryAddOnLine.item_name = projectCode (truncated to 100)
     - InventoryAddOnLine.description = signType (truncated to 500)
     - InventoryAddOnLine.quantity = quantity (int)
     """
@@ -174,6 +175,7 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
                 "project_code": project_code,
                 "work_id": work_id,
                 "project_name": _limit(row.get("projectName"), 100),
+                "item_name": _limit(project_code, 100),
                 "sign_type": _limit(row.get("signType"), 500),
                 "quantity": row.get("quantity"),
                 "completedon": completedon,
@@ -183,7 +185,7 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
     # Small caches to reduce round-trips during big imports.
     item_by_key: dict[str, Item] = {}
     stock_by_item_location: dict[tuple[str, str], ItemStock] = {}
-    header_by_doc: dict[str, InventoryAddOn] = {}
+    header_by_project: dict[str, InventoryAddOn] = {}
 
     for project_code, items in grouped.items():
         project_bucket = summary.per_project.setdefault(
@@ -191,16 +193,7 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
             {"imported": 0, "skipped_duplicates": 0, "skipped_wrong_location": 0, "skipped_missing_fields": 0},
         )
 
-        header = header_by_doc.get(project_code)
-        if header is None:
-            header = app_db.query(InventoryAddOn).filter(InventoryAddOn.doc_number == project_code).first()
-            if header is not None:
-                header_by_doc[project_code] = header
-
-        if header and (header.location_store or "").strip() != DEFAULT_ERP_IMPORT_LOCATION:
-            summary.skipped_wrong_location += len(items)
-            project_bucket["skipped_wrong_location"] += len(items)
-            continue
+        header = header_by_project.get(project_code)
 
         # Compute header date (max completedon among items that will be imported).
         max_completed = None
@@ -223,7 +216,7 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
                 project_bucket["skipped_duplicates"] += 1
                 continue
 
-            item_name = it["project_name"] or ""
+            item_name = it["item_name"] or ""
             if not item_name:
                 # Ensure we still have a non-empty item_name for the inventory master.
                 item_name = f"Project {project_code}"
@@ -298,15 +291,16 @@ def import_completed_sample_workorders(app_db: Session, erp_db: Session) -> Impo
 
             # Add inventory add-on line.
             if header is None:
+                doc_number = generate_doc_number(app_db, InventoryAddOn, "IA")
                 header = InventoryAddOn(
                     id=str(uuid4()),
-                    doc_number=project_code,
+                    doc_number=doc_number,
                     date=datetime.now(),
                     location_store=DEFAULT_ERP_IMPORT_LOCATION,
                 )
                 app_db.add(header)
                 app_db.flush()
-                header_by_doc[project_code] = header
+                header_by_project[project_code] = header
 
             line = InventoryAddOnLine(
                 id=str(uuid4()),

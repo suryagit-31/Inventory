@@ -115,14 +115,13 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
               <th>Item</th>
               <th>Work ID</th>
               <th>Description</th>
-              <th style={{ width: '110px' }}>Qty On Hand</th>
               <th style={{ width: '90px' }}>Qty Issue</th>
             </tr>
           </thead>
           <tbody>
             {(formData.lineItems || []).length === 0 ? (
               <tr>
-                <td colSpan={6} className="empty">No line items.</td>
+                <td colSpan={5} className="empty">No line items.</td>
               </tr>
             ) : (
               (formData.lineItems || []).map((li, idx) => (
@@ -131,7 +130,6 @@ function PrintableSampleIssueDoc({ formData }: PrintableSampleIssueDocProps) {
                   <td>{li.itemName}</td>
                   <td>{li.workId || ''}</td>
                   <td>{li.description || ''}</td>
-                  <td className="num">{_num(li.qtyOnHand)}</td>
                   <td className="num">{_num(li.qtyIssue)}</td>
                 </tr>
               ))
