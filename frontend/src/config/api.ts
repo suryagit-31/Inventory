@@ -1,4 +1,4 @@
-// API Configuration
+// API Configurationhttp://localhost:8000
 const envUrl = (process.env.REACT_APP_API_URL || '').trim();
 const envUrlNormalized = envUrl.replace(/\/+$/, '');
 

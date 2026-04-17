@@ -21,6 +21,7 @@ from app.schemas.sample_issue import (
 from app.utils.doc_number import generate_doc_number
 from app.utils.normalize import normalize_item_name
 from app.utils.report_xlsx import build_workbook
+from app.services.graph_mail_service import send_sample_issue_issued_email
 
 router = APIRouter(prefix="/api/sample-issues", tags=["Sample Issues"])
 
@@ -110,6 +111,16 @@ def _get_stock_for_update(db: Session, item_id: str, location: str) -> ItemStock
         .filter(ItemStock.location == location)
         .first()
     )
+
+
+def _send_issue_email_for_new_issue(issue_status: str, db_issue: SampleIssue) -> None:
+    if issue_status != "Issued":
+        return
+    try:
+        send_sample_issue_issued_email(db_issue)
+    except Exception as exc:
+        # Keep issue creation committed even if notification fails.
+        print(f"Warning: sample issue email send failed for {db_issue.doc_number}: {exc}")
 
 @router.get("/", response_model=List[SampleIssueResponse])
 def get_all_sample_issues(
@@ -404,6 +415,7 @@ def create_sample_issue(issue: SampleIssueCreate, db: Session = Depends(get_db))
 
         db.commit()
         db.refresh(db_issue)
+        _send_issue_email_for_new_issue(issue.status, db_issue)
         return db_issue
     except Exception:
         db.rollback()

@@ -119,7 +119,17 @@ API_PORT=8000
 APP_DEBUG=True
 
 CORS_ORIGINS=http://localhost:3000
+
+# Microsoft Graph mail (for Sample Issue "Issued" notifications)
+BILL_PROCESSING_AZURE_TENANT_ID=your_tenant_id
+BILL_PROCESSING_AZURE_CLIENT_ID=your_client_id
+BILL_PROCESSING_AZURE_CLIENT_SECRET=your_client_secret
+BILL_PROCESSING_AZURE_SCOPE=https://graph.microsoft.com/.default
+BILL_PROCESSING_GRAPH_SENDER=noreply@brisigns.com
+SAMPLE_ISSUE_EMAIL_TO=jobcosting@brisigns.com,Receivables@brisigns.com,denny@brisigns.com,surya@app-brisigns.com
 ```
+
+For Graph email sending, the Azure app registration must have application permission to send mail and admin consent granted. The sender mailbox (`BILL_PROCESSING_GRAPH_SENDER`) must also be valid for the tenant.
 
 ### 5. Initialize Database
 
@@ -310,6 +320,12 @@ print(response.json())
 | `APP_DEBUG` | Debug mode | True |
 | `DEBUG` | Legacy debug mode (if `APP_DEBUG` unset) | True |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | http://localhost:3000 |
+| `BILL_PROCESSING_AZURE_TENANT_ID` | Azure tenant ID used for Graph token | - |
+| `BILL_PROCESSING_AZURE_CLIENT_ID` | Azure app/client ID used for Graph token | - |
+| `BILL_PROCESSING_AZURE_CLIENT_SECRET` | Azure app/client secret used for Graph token | - |
+| `BILL_PROCESSING_AZURE_SCOPE` | Graph OAuth scope for app token | https://graph.microsoft.com/.default |
+| `BILL_PROCESSING_GRAPH_SENDER` | Sender mailbox used in Graph `/users/{sender}/sendMail` | noreply@brisigns.com |
+| `SAMPLE_ISSUE_EMAIL_TO` | Comma-separated recipient list for Sample Issue issued notifications | jobcosting@brisigns.com |
 
 ## Troubleshooting
 

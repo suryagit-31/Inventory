@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     # Scheduled import trigger protection (optional but recommended in production)
     IMPORT_TOKEN: str = ""
 
+    # Microsoft Graph mail (used for Sample Issue submit notifications)
+    BILL_PROCESSING_AZURE_TENANT_ID: str = ""
+    BILL_PROCESSING_AZURE_CLIENT_ID: str = ""
+    BILL_PROCESSING_AZURE_CLIENT_SECRET: str = ""
+    BILL_PROCESSING_AZURE_SCOPE: str = "https://graph.microsoft.com/.default"
+    BILL_PROCESSING_GRAPH_SENDER: str = "noreply@brisigns.com"
+    SAMPLE_ISSUE_EMAIL_TO: str = (
+        "jobcosting@brisigns.com,Receivables@brisigns.com,denny@brisigns.com,surya@app-brisigns.com"
+    )
+
     @property
     def app_database_url(self) -> str:
         """Generate SQLAlchemy database URL for the Sample Tracker DB."""
@@ -119,6 +129,12 @@ class Settings(BaseSettings):
             "ERP_DB_USER": self.ERP_DB_USER or self.DB_USER,
             "ERP_DB_PASSWORD": _mask(self.ERP_DB_PASSWORD or self.DB_PASSWORD),
             "ERP_DB_DRIVER": self.ERP_DB_DRIVER or self.DB_DRIVER,
+            "BILL_PROCESSING_AZURE_TENANT_ID": self.BILL_PROCESSING_AZURE_TENANT_ID,
+            "BILL_PROCESSING_AZURE_CLIENT_ID": self.BILL_PROCESSING_AZURE_CLIENT_ID,
+            "BILL_PROCESSING_AZURE_CLIENT_SECRET": _mask(self.BILL_PROCESSING_AZURE_CLIENT_SECRET),
+            "BILL_PROCESSING_AZURE_SCOPE": self.BILL_PROCESSING_AZURE_SCOPE,
+            "BILL_PROCESSING_GRAPH_SENDER": self.BILL_PROCESSING_GRAPH_SENDER,
+            "SAMPLE_ISSUE_EMAIL_TO": self.SAMPLE_ISSUE_EMAIL_TO,
         }
 
     @field_validator("DEBUG", mode="before")

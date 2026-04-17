@@ -695,3 +695,83 @@ select.table-input option {
   font-size: 16px;
   font-style: italic;
 }
+
+/* Work ID suggestion dropdown (typeahead) */
+.work-id-cell {
+  position: relative;
+  width: 100%;
+}
+
+.line-items-table td {
+  overflow: visible;
+}
+
+.work-id-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #dce1e8;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+  max-height: none;
+  overflow: visible;
+  z-index: 999;
+}
+
+/* Portaled to document.body — avoids clipping by .form-card overflow */
+.work-id-dropdown.work-id-dropdown-portal {
+  position: fixed;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  right: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.work-id-dropdown.work-id-dropdown-portal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.work-id-dropdown.work-id-dropdown-portal::-webkit-scrollbar-track {
+  background: #f0f2f5;
+  border-radius: 4px;
+}
+
+.work-id-dropdown.work-id-dropdown-portal::-webkit-scrollbar-thumb {
+  background: #b8c4d4;
+  border-radius: 4px;
+}
+
+.work-id-dropdown.work-id-dropdown-portal::-webkit-scrollbar-thumb:hover {
+  background: #9aaaba;
+}
+
+.work-id-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: #fff;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-family: 'Lato', sans-serif;
+  font-size: 14px;
+  line-height: 1.35;
+  border-bottom: 1px solid #ecf0f1;
+}
+
+.work-id-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.work-id-dropdown-item:hover {
+  background-color: #e8f4f8;
+}

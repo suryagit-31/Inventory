@@ -1,10 +1,11 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DocumentTextIcon } from '@heroicons/react/24/outline';
 import { DISPOSITION_TYPES, LOCATIONS, SampleIssue, SampleLineItem, ERPProjectSearchResult } from '../types/sample.types';
 import { API_BASE_URL } from '../config/api';
 import { getProjectDetails, searchProjects } from '../services/projectService';
 import { listItems, ItemResponse } from '../services/itemsService';
+import { listRecentInventoryAddOnLines } from '../services/inventoryService';
 import { createSampleIssue, getSampleIssueByDocNumber, listSampleIssues, SampleIssueResponse } from '../services/sampleIssueService';
 import { useToast } from '../components/Toast/ToastContext';
 import { localISODate } from '../utils/date';
@@ -161,6 +162,11 @@ const SampleIssuePage: React.FC = () => {
 
   const [formData, setFormData] = useState<SampleIssue>(createEmptyIssue);
   const [items, setItems] = useState<ItemResponse[]>([]);
+  const [workIdOptions, setWorkIdOptions] = useState<string[]>([]);
+  const [activeWorkIdRowId, setActiveWorkIdRowId] = useState<string | null>(null);
+  const [workIdDropdownPos, setWorkIdDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const workIdInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const workIdDropdownPortalRef = useRef<HTMLDivElement | null>(null);
   const [isLoadingItems, setIsLoadingItems] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -296,6 +302,96 @@ const SampleIssuePage: React.FC = () => {
 
     loadIssued();
   }, [isFormOpen, issuedPage, toast]);
+
+  useEffect(() => {
+    if (!isFormOpen) return;
+
+    const loadWorkIds = async () => {
+      try {
+        const lines = await listRecentInventoryAddOnLines({ skip: 0, limit: 1000 });
+        const unique = Array.from(
+          new Set(
+            lines
+              .map((line) => (line.work_id || '').trim())
+              .filter((workId) => workId.length > 0)
+          )
+        ).sort((a, b) => a.localeCompare(b));
+        setWorkIdOptions(unique);
+      } catch (error) {
+        console.error('Failed to load work IDs from inventory add-ons:', error);
+        setWorkIdOptions([]);
+      }
+    };
+
+    loadWorkIds();
+  }, [isFormOpen]);
+
+  const workIdSuggestionList = useMemo(() => {
+    if (!activeWorkIdRowId || isViewOnly) {
+      return { rowId: null as string | null, ids: [] as string[] };
+    }
+    const row = formData.lineItems.find((li) => li.id === activeWorkIdRowId);
+    if (!row) return { rowId: null, ids: [] };
+    const q = (row.workId || '').trim().toLowerCase();
+    const ids = workIdOptions
+      .filter((workId) => workId.toLowerCase().includes(q))
+      .slice(0, 8);
+    return { rowId: activeWorkIdRowId, ids };
+  }, [activeWorkIdRowId, isViewOnly, formData.lineItems, workIdOptions]);
+
+  useLayoutEffect(() => {
+    if (!isFormOpen || isViewOnly || !workIdSuggestionList.rowId || workIdSuggestionList.ids.length === 0) {
+      setWorkIdDropdownPos(null);
+      return;
+    }
+    const rowId = workIdSuggestionList.rowId;
+
+    let lastPos: { top: number; left: number; width: number } | null = null;
+    let scrollRaf = 0;
+
+    const applyPosition = () => {
+      const input = workIdInputRefs.current[rowId];
+      if (!input) {
+        lastPos = null;
+        setWorkIdDropdownPos(null);
+        return;
+      }
+      const rect = input.getBoundingClientRect();
+      const next = { top: rect.bottom + 2, left: rect.left, width: rect.width };
+      if (
+        lastPos &&
+        lastPos.top === next.top &&
+        lastPos.left === next.left &&
+        lastPos.width === next.width
+      ) {
+        return;
+      }
+      lastPos = next;
+      setWorkIdDropdownPos(next);
+    };
+
+    const syncPositionScroll = () => {
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = 0;
+        applyPosition();
+      });
+    };
+
+    applyPosition();
+
+    const mainContent = document.querySelector<HTMLElement>('.main-content');
+    window.addEventListener('resize', applyPosition);
+    window.addEventListener('scroll', syncPositionScroll, true);
+    mainContent?.addEventListener('scroll', syncPositionScroll, { passive: true });
+
+    return () => {
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      window.removeEventListener('resize', applyPosition);
+      window.removeEventListener('scroll', syncPositionScroll, true);
+      mainContent?.removeEventListener('scroll', syncPositionScroll);
+    };
+  }, [isFormOpen, isViewOnly, workIdSuggestionList]);
 
   const updateDropdownPosition = () => {
     const input = searchInputRef.current;
@@ -470,6 +566,9 @@ const SampleIssuePage: React.FC = () => {
     setShowDropdown(false);
     setDropdownPos(null);
     setFormData(createEmptyIssue());
+    setActiveWorkIdRowId(null);
+    setWorkIdDropdownPos(null);
+    workIdInputRefs.current = {};
     setIssuedPage(0);
     setTimeout(() => searchInputRef.current?.focus(), 0);
   };
@@ -500,6 +599,11 @@ const SampleIssuePage: React.FC = () => {
 
   const removeLineItem = (id: string) => {
     if (isViewOnly) return;
+    if (activeWorkIdRowId === id) {
+      setActiveWorkIdRowId(null);
+      setWorkIdDropdownPos(null);
+    }
+    delete workIdInputRefs.current[id];
     setFormData({
       ...formData,
       lineItems: formData.lineItems.filter(item => item.id !== id)
@@ -1037,7 +1141,8 @@ const SampleIssuePage: React.FC = () => {
                         </td>
                       </tr>
                     ) : (
-                      formData.lineItems.map((item) => (
+                      formData.lineItems.map((item) => {
+                        return (
                         <tr key={item.id}>
                           <td>
                               <select
@@ -1057,14 +1162,26 @@ const SampleIssuePage: React.FC = () => {
                               </select>
                             </td>
                           <td>
-                            <input
-                              type="text"
-                              value={item.workId}
-                              onChange={(e) => updateLineItem(item.id, 'workId', e.target.value)}
-                              className="table-input"
-                              placeholder="Work ID"
-                              disabled={isViewOnly}
-                            />
+                            <div className="work-id-cell">
+                              <input
+                                ref={(el) => {
+                                  workIdInputRefs.current[item.id] = el;
+                                }}
+                                type="text"
+                                value={item.workId}
+                                onChange={(e) => {
+                                  updateLineItem(item.id, 'workId', e.target.value);
+                                  setActiveWorkIdRowId(item.id);
+                                }}
+                                onFocus={() => setActiveWorkIdRowId(item.id)}
+                                onBlur={() => {
+                                  setTimeout(() => setActiveWorkIdRowId((curr) => (curr === item.id ? null : curr)), 120);
+                                }}
+                                className="table-input"
+                                placeholder="Type or choose Work ID"
+                                disabled={isViewOnly}
+                              />
+                            </div>
                           </td>
                           <td>
                             <input
@@ -1117,7 +1234,8 @@ const SampleIssuePage: React.FC = () => {
                             )}
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1133,6 +1251,45 @@ const SampleIssuePage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {isFormOpen &&
+          !isViewOnly &&
+          workIdDropdownPos &&
+          workIdSuggestionList.rowId &&
+          workIdSuggestionList.ids.length > 0
+            ? createPortal(
+                <div
+                  ref={workIdDropdownPortalRef}
+                  className="work-id-dropdown work-id-dropdown-portal"
+                  style={{
+                    position: 'fixed',
+                    top: workIdDropdownPos.top,
+                    left: workIdDropdownPos.left,
+                    width: workIdDropdownPos.width,
+                    zIndex: 100000,
+                  }}
+                >
+                  {workIdSuggestionList.ids.map((workId) => (
+                    <button
+                      key={workId}
+                      type="button"
+                      className="work-id-dropdown-item"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        const rowId = workIdSuggestionList.rowId;
+                        if (!rowId) return;
+                        updateLineItem(rowId, 'workId', workId);
+                        setActiveWorkIdRowId(null);
+                        setWorkIdDropdownPos(null);
+                      }}
+                    >
+                      {workId}
+                    </button>
+                  ))}
+                </div>,
+                document.body
+              )
+            : null}
         </>
       )}
       </div>
